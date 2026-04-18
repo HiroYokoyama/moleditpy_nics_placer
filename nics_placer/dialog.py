@@ -166,9 +166,6 @@ class NicsPlacerDialog(QDialog):
         self._poll_timer.timeout.connect(self._check_molecule_changed)
 
         self._setup_ui()
-        self._load_rings()
-        self._enable_picking()
-        self._poll_timer.start()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -387,6 +384,8 @@ class NicsPlacerDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _enable_picking(self):
+        if self._click_filter is not None:
+            return  # already installed
         try:
             plotter = self._context.plotter
             if plotter is None:
@@ -530,6 +529,15 @@ class NicsPlacerDialog(QDialog):
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Re-initialise after being hidden (e.g. closed then re-opened via registry)
+        self._last_mol_id = id(self._context.current_molecule)
+        self._load_rings()
+        self._enable_picking()
+        if not self._poll_timer.isActive():
+            self._poll_timer.start()
 
     def closeEvent(self, event):
         self._poll_timer.stop()
