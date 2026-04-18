@@ -17,7 +17,7 @@ PLUGIN_DESCRIPTION = (
     "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. "
     "Compatible with ORCA Input Generator Pro via the custom_symbol property."
 )
-PLUGIN_CATEGORY = "Analysis"
+PLUGIN_CATEGORY = "3D Edit"
 
 
 def initialize(context):
@@ -50,7 +50,7 @@ def initialize(context):
         context.register_window("main_panel", dlg)
         dlg.show()
 
-    context.add_analysis_tool("NICS Placer...", show_dialog)
+    context.add_menu_action("3D Edit/NICS Placer...", show_dialog)
 
     # ---------------------------------------------------------------
     # Project file persistence

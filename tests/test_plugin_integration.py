@@ -26,6 +26,7 @@ class _StubContext:
         self.current_molecule = None
         self.plotter = None
         self.add_analysis_tool = MagicMock()
+        self.add_menu_action = MagicMock()
         self.show_status_message = MagicMock()
 
     def get_main_window(self):
@@ -94,12 +95,13 @@ class TestMetadata(unittest.TestCase):
         parts = PLUGIN_VERSION.split(".")
         self.assertEqual(len(parts), 3)
 
-    def test_initialize_registers_analysis_tool(self):
+    def test_initialize_registers_menu_action(self):
         ctx = _StubContext()
         initialize(ctx)
-        ctx.add_analysis_tool.assert_called_once()
-        name_arg = ctx.add_analysis_tool.call_args[0][0]
-        self.assertIn("NICS", name_arg)
+        ctx.add_menu_action.assert_called_once()
+        path_arg = ctx.add_menu_action.call_args[0][0]
+        self.assertIn("3D Edit", path_arg)
+        self.assertIn("NICS", path_arg)
 
 
 # ---------------------------------------------------------------------------
