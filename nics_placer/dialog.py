@@ -49,6 +49,7 @@ from .nics_math import (
 _GHOST_SYMBOLS = ("Bq", "H:")   # all recognised ghost atom labels
 _PICK_DIST_SQ = 1.0             # Å² snap threshold
 _SPHERE_RADIUS = 0.25
+_GREEN_SPHERE_RADIUS = 0.40     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +108,18 @@ def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
 
 
 def _remove_all_bq(mol):
-    """Return a new Mol with every ghost atom (Bq or H:) removed."""
+    """Return a new Mol with every ghost atom removed.
+
+    Catches three cases:
+      - custom_symbol in _GHOST_SYMBOLS  (Bq / H: as placed)
+      - atomic num 0 with no custom_symbol  (* produced by geometry optimisation)
+    """
     rw = Chem.RWMol(mol)
     to_remove = [
         a.GetIdx()
         for a in rw.GetAtoms()
-        if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS
+        if (a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS)
+        or (a.GetAtomicNum() == 0 and not a.HasProp("custom_symbol"))
     ]
     for idx in sorted(to_remove, reverse=True):
         rw.RemoveAtom(idx)
@@ -295,7 +302,10 @@ class NicsPlacerDialog(QDialog):
         conf = mol.GetConformer()
         bq_pos = []
         for atom in mol.GetAtoms():
-            if atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS:
+            if (
+                (atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS)
+                or (atom.GetAtomicNum() == 0 and not atom.HasProp("custom_symbol"))
+            ):
                 p = conf.GetAtomPosition(atom.GetIdx())
                 bq_pos.append(np.array([p.x, p.y, p.z]))
 
@@ -360,7 +370,7 @@ class NicsPlacerDialog(QDialog):
                 )
             if green_pts:
                 self._actor_green = plotter.add_mesh(
-                    _glyph(green_pts), name="nics_green",
+                    _glyph(green_pts, radius=_GREEN_SPHERE_RADIUS), name="nics_green",
                     color="green", opacity=0.55, pickable=False,
                 )
 
