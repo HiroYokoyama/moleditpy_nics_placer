@@ -38,7 +38,7 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 import pyvista as pv
 
-from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings
+from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
 from .nics_math import (
     NICS1_HEIGHT,
     compute_nics_points,
@@ -462,6 +462,7 @@ class NicsPlacerDialog(QDialog):
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
+        _save_plugin_settings(_plugin_settings)
 
     def _selected_ring_indices(self) -> set:
         selected = {idx.row() for idx in self._table.selectedIndexes()}

@@ -8,7 +8,9 @@ Uses the same ``custom_symbol`` atom property as the XYZ Editor, so ORCA
 Input Generator Pro automatically renders the Bq labels in the coordinate
 block without any additional configuration.
 """
+import json
 import logging
+import os
 
 PLUGIN_NAME = "NICS Placer"
 PLUGIN_VERSION = "1.0.0"
@@ -19,11 +21,44 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY = "3D Edit"
 
-# Module-level settings — persisted in project file and remembered within session
-_plugin_settings: dict = {"ghost_symbol": "Bq"}
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
+_GHOST_SYMBOLS = {"Bq", "H:"}
 _dialog_opened: bool = False   # guard: don't write to project file until plugin is used
 
-_GHOST_SYMBOLS = {"Bq", "H:"}
+
+def _default_settings() -> dict:
+    return {"ghost_symbol": "Bq"}
+
+
+def _load_plugin_settings() -> dict:
+    """Load settings.json; fall back to defaults on any error."""
+    try:
+        with open(_SETTINGS_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return _default_settings()
+        # Validate known keys
+        if data.get("ghost_symbol") not in _GHOST_SYMBOLS:
+            data["ghost_symbol"] = "Bq"
+        return data
+    except FileNotFoundError:
+        return _default_settings()
+    except Exception as _e:
+        logging.warning("[nics_placer/__init__.py] load settings.json: %s", _e)
+        return _default_settings()
+
+
+def _save_plugin_settings(settings: dict) -> None:
+    """Write settings.json; log on failure."""
+    try:
+        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except Exception as _e:
+        logging.warning("[nics_placer/__init__.py] save settings.json: %s", _e)
+
+
+# Loaded once at import time — persists across documents within a session
+_plugin_settings: dict = _load_plugin_settings()
 
 
 def initialize(context):
@@ -62,8 +97,9 @@ def initialize(context):
 
     # ---------------------------------------------------------------
     # Project file persistence
-    # Saves ghost_symbol preference + ghost atom indices → custom_symbol.
-    # On load, restores both.
+    # ghost_symbol: per-project override (on_load overwrites plugin setting
+    #               for this session; on_reset restores from settings.json)
+    # bq_labels:    molecule-specific ghost atom indices
     # ---------------------------------------------------------------
     def on_save():
         if not _dialog_opened:
@@ -84,20 +120,19 @@ def initialize(context):
     def on_load(data):
         if not isinstance(data, dict):
             return
-        # Restore ghost symbol preference
         global _dialog_opened
-        _dialog_opened = True   # loading from project file counts as "used"
+        _dialog_opened = True
+        # Per-project ghost_symbol overrides the plugin default for this session
         sym = data.get("ghost_symbol")
         if sym in _GHOST_SYMBOLS:
             _plugin_settings["ghost_symbol"] = sym
-            # Update open dialog's combo if visible
             win = context.get_window("main_panel")
             if win and hasattr(win, "sync_symbol_from_settings"):
                 try:
                     win.sync_symbol_from_settings()
                 except Exception as _e:
                     logging.warning("[nics_placer/__init__.py] sync combo: %s", _e)
-        # Restore ghost atom labels
+        # Restore ghost atom labels onto molecule
         labels = data.get("bq_labels", {})
         if not labels:
             return
@@ -114,7 +149,9 @@ def initialize(context):
     def on_reset():
         global _dialog_opened
         _dialog_opened = False
-        _plugin_settings["ghost_symbol"] = "Bq"
+        # Restore plugin-level default from settings.json
+        _plugin_settings.clear()
+        _plugin_settings.update(_load_plugin_settings())
         win = context.get_window("main_panel")
         if win:
             try:
