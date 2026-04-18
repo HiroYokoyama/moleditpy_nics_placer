@@ -132,19 +132,43 @@ def initialize(context):
                     win.sync_symbol_from_settings()
                 except Exception as _e:
                     logging.warning("[nics_placer/__init__.py] sync combo: %s", _e)
-        # Restore ghost atom labels onto molecule
+        # Restore ghost atom labels onto molecule.
+        # IMPORTANT: the app fires load handlers BEFORE restoring the 3D molecule,
+        # so context.current_molecule is None at this point.  We defer the actual
+        # label restore to the next Qt event-loop tick (after the project loader
+        # has set view_3d_manager.current_mol) using QTimer.singleShot.
         labels = data.get("bq_labels", {})
         if not labels:
             return
-        mol = context.current_molecule
-        if not mol:
-            return
-        for idx_str, lbl in labels.items():
-            try:
-                mol.GetAtomWithIdx(int(idx_str)).SetProp("custom_symbol", lbl)
-            except Exception as _e:
-                logging.warning("[nics_placer/__init__.py] on_load atom %s: %s", idx_str, _e)
-        context.current_molecule = mol
+
+        def _apply_labels():
+            mw = context.get_main_window()
+            mol = (
+                mw.view_3d_manager.current_mol
+                if mw and hasattr(mw, "view_3d_manager")
+                else None
+            )
+            if not mol:
+                logging.warning(
+                    "[nics_placer/__init__.py] on_load: molecule still None after deferred restore"
+                )
+                return
+            for idx_str, lbl in labels.items():
+                try:
+                    mol.GetAtomWithIdx(int(idx_str)).SetProp("custom_symbol", lbl)
+                except Exception as _e:
+                    logging.warning(
+                        "[nics_placer/__init__.py] on_load atom %s: %s", idx_str, _e
+                    )
+            # Labels are applied in-place; no redraw needed here — the app's own
+            # draw_molecule_3d call that follows the load will pick them up.
+
+        try:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, _apply_labels)
+        except ImportError:
+            # Fallback for test environments without PyQt6
+            _apply_labels()
 
     def on_reset():
         global _dialog_opened
