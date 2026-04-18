@@ -12,6 +12,15 @@ import json
 import logging
 import os
 
+# Qt timer — imported once at module level so the import DLL load happens
+# only when the Qt runtime is already present.  Falls back to None so that
+# headless test environments never try to load the QtCore DLL.
+try:
+    from PyQt6.QtCore import QTimer as _QTimer, QCoreApplication as _QCoreApplication
+except Exception:  # ImportError or OS-level DLL crash
+    _QTimer = None
+    _QCoreApplication = None
+
 PLUGIN_NAME = "NICS Placer"
 PLUGIN_VERSION = "1.0.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
@@ -142,12 +151,7 @@ def initialize(context):
             return
 
         def _apply_labels():
-            mw = context.get_main_window()
-            mol = (
-                mw.view_3d_manager.current_mol
-                if mw and hasattr(mw, "view_3d_manager")
-                else None
-            )
+            mol = context.current_molecule
             if not mol:
                 logging.warning(
                     "[nics_placer/__init__.py] on_load: molecule still None after deferred restore"
@@ -163,11 +167,12 @@ def initialize(context):
             # Labels are applied in-place; no redraw needed here — the app's own
             # draw_molecule_3d call that follows the load will pick them up.
 
-        try:
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(0, _apply_labels)
-        except ImportError:
-            # Fallback for test environments without PyQt6
+        if _QTimer is not None and _QCoreApplication is not None and _QCoreApplication.instance() is not None:
+            # Running inside the real app — defer until the project-load
+            # sequence has finished restoring the 3D molecule.
+            _QTimer.singleShot(0, _apply_labels)
+        else:
+            # No event loop (headless / unit-test) or Qt unavailable — apply immediately.
             _apply_labels()
 
     def on_reset():
