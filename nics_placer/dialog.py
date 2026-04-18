@@ -159,10 +159,16 @@ class NicsPlacerDialog(QDialog):
         self._actor_yellow = None
         self._actor_red = None
         self._actor_green = None
+        # Molecule-change detection (poll id() every 500 ms)
+        self._last_mol_id: int = id(context.current_molecule)
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(500)
+        self._poll_timer.timeout.connect(self._check_molecule_changed)
 
         self._setup_ui()
         self._load_rings()
         self._enable_picking()
+        self._poll_timer.start()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -508,10 +514,25 @@ class NicsPlacerDialog(QDialog):
         QTimer.singleShot(150, self._render_spheres)
 
     # ------------------------------------------------------------------
+    # Molecule-change detection
+    # ------------------------------------------------------------------
+
+    def _check_molecule_changed(self):
+        try:
+            mol = self._context.current_molecule
+            mol_id = id(mol)
+            if mol_id != self._last_mol_id:
+                self._last_mol_id = mol_id
+                self._load_rings()
+        except Exception as _e:
+            logging.warning("[dialog.py] _check_molecule_changed: %s", _e)
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def closeEvent(self, event):
+        self._poll_timer.stop()
         self._disable_picking()
         self._clear_actors()
         super().closeEvent(event)
