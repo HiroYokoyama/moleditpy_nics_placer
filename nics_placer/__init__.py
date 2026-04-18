@@ -21,6 +21,7 @@ PLUGIN_CATEGORY = "3D Edit"
 
 # Module-level settings — persisted in project file and remembered within session
 _plugin_settings: dict = {"ghost_symbol": "Bq"}
+_dialog_opened: bool = False   # guard: don't write to project file until plugin is used
 
 _GHOST_SYMBOLS = {"Bq", "H:"}
 
@@ -53,6 +54,8 @@ def initialize(context):
         mw = context.get_main_window()
         dlg = NicsPlacerDialog(context, parent=mw)
         context.register_window("main_panel", dlg)
+        global _dialog_opened
+        _dialog_opened = True
         dlg.show()
 
     context.add_menu_action("3D Edit/NICS Placer...", show_dialog)
@@ -63,6 +66,8 @@ def initialize(context):
     # On load, restores both.
     # ---------------------------------------------------------------
     def on_save():
+        if not _dialog_opened:
+            return None
         result = {"ghost_symbol": _plugin_settings["ghost_symbol"]}
         mol = context.current_molecule
         if mol:
@@ -80,6 +85,8 @@ def initialize(context):
         if not isinstance(data, dict):
             return
         # Restore ghost symbol preference
+        global _dialog_opened
+        _dialog_opened = True   # loading from project file counts as "used"
         sym = data.get("ghost_symbol")
         if sym in _GHOST_SYMBOLS:
             _plugin_settings["ghost_symbol"] = sym
@@ -105,6 +112,8 @@ def initialize(context):
         context.current_molecule = mol
 
     def on_reset():
+        global _dialog_opened
+        _dialog_opened = False
         _plugin_settings["ghost_symbol"] = "Bq"
         win = context.get_window("main_panel")
         if win:
