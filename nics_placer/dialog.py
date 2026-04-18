@@ -4,16 +4,19 @@ NicsPlacerDialog — ring detection, NICS probe visualisation, and Bq placement.
 Sphere colours:
   Yellow (semi-transparent) = unselected probe position
   Red    (semi-transparent) = staged for placement (click to toggle)
-  Green                     = already placed (Bq atom exists)
+  Green                     = already placed (ghost atom exists)
 
 Workflow:
   1. Click a yellow sphere  → turns red  (staged)
   2. Click a red sphere     → turns yellow (unstaged)
-  3. Press "Apply"          → places Bq for all red spheres
+  3. Press "Apply"          → places ghost atom for all red spheres
      OR press "Place All"  → stages + places everything in one shot
 
-The 'custom_symbol = "Bq"' atom property is the same convention used by
-XYZ Editor and ORCA Input Generator Pro.
+Ghost atom symbol options:
+  Bq  — Gaussian convention; also valid in ORCA (recognised by ORCA Input Generator Pro)
+  H:  — ORCA native ghost atom notation
+
+The 'custom_symbol' atom property is shared with XYZ Editor and ORCA Input Generator Pro.
 """
 import logging
 
@@ -21,6 +24,7 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -42,8 +46,8 @@ from .nics_math import (
     get_rings,
 )
 
-_BQ_SYMBOL = "Bq"
-_PICK_DIST_SQ = 1.0     # Å² snap threshold
+_GHOST_SYMBOLS = ("Bq", "H:")   # all recognised ghost atom labels
+_PICK_DIST_SQ = 1.0             # Å² snap threshold
 _SPHERE_RADIUS = 0.25
 
 
@@ -77,11 +81,11 @@ class _ClickFilter(QObject):
 # RDKit molecule helpers
 # ---------------------------------------------------------------------------
 
-def _add_bq_atom(mol, position: np.ndarray):
-    """Return a new Mol with a Bq dummy atom appended at *position*."""
+def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
+    """Return a new Mol with a ghost dummy atom appended at *position*."""
     rw = Chem.RWMol(mol)
     atom = Chem.Atom(0)
-    atom.SetProp("custom_symbol", _BQ_SYMBOL)
+    atom.SetProp("custom_symbol", symbol)
     new_idx = rw.AddAtom(atom)
 
     old_conf = mol.GetConformer()
@@ -103,12 +107,12 @@ def _add_bq_atom(mol, position: np.ndarray):
 
 
 def _remove_all_bq(mol):
-    """Return a new Mol with every Bq ghost atom removed."""
+    """Return a new Mol with every ghost atom (Bq or H:) removed."""
     rw = Chem.RWMol(mol)
     to_remove = [
         a.GetIdx()
         for a in rw.GetAtoms()
-        if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") == _BQ_SYMBOL
+        if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS
     ]
     for idx in sorted(to_remove, reverse=True):
         rw.RemoveAtom(idx)
@@ -149,6 +153,7 @@ class NicsPlacerDialog(QDialog):
 
         # List of dicts: {'ring':int, 'type':str, 'pos':np.ndarray, 'state':str}
         self._nics_points: list = []
+        self._ghost_symbol: str = "Bq"   # "Bq" or "H:"
         self._click_filter = None
         # Actor references for pick-detection
         self._actor_yellow = None
@@ -174,6 +179,16 @@ class NicsPlacerDialog(QDialog):
         )
         info.setWordWrap(True)
         layout.addWidget(info)
+
+        sym_row = QHBoxLayout()
+        sym_row.addWidget(QLabel("Ghost atom label:"))
+        self._sym_combo = QComboBox()
+        self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
+        self._sym_combo.addItem("H:  (ORCA native)",     "H:")
+        self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
+        sym_row.addWidget(self._sym_combo)
+        sym_row.addStretch()
+        layout.addLayout(sym_row)
 
         self._table = QTableWidget()
         self._table.setColumnCount(4)
@@ -277,7 +292,7 @@ class NicsPlacerDialog(QDialog):
         conf = mol.GetConformer()
         bq_pos = []
         for atom in mol.GetAtoms():
-            if atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") == _BQ_SYMBOL:
+            if atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS:
                 p = conf.GetAtomPosition(atom.GetIdx())
                 bq_pos.append(np.array([p.x, p.y, p.z]))
 
@@ -429,6 +444,9 @@ class NicsPlacerDialog(QDialog):
     # Stage helpers
     # ------------------------------------------------------------------
 
+    def _on_symbol_changed(self, _index):
+        self._ghost_symbol = self._sym_combo.currentData()
+
     def _selected_ring_indices(self) -> set:
         selected = {idx.row() for idx in self._table.selectedIndexes()}
         return selected if selected else set(range(self._table.rowCount()))
@@ -462,7 +480,7 @@ class NicsPlacerDialog(QDialog):
         if not mol:
             return
         for pt in staged:
-            mol = _add_bq_atom(mol, pt["pos"])
+            mol = _add_bq_atom(mol, pt["pos"], symbol=self._ghost_symbol)
             pt["state"] = _STATE_PLACED
         self._context.current_molecule = mol
         self._context.push_undo_checkpoint()
