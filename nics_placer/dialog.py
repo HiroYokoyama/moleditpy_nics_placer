@@ -49,7 +49,7 @@ from .nics_math import (
 _GHOST_SYMBOLS = ("Bq", "H:")   # all recognised ghost atom labels
 _PICK_DIST_SQ = 1.0             # Å² snap threshold
 _SPHERE_RADIUS = 0.25
-_GREEN_SPHERE_RADIUS = 0.40     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
+_GREEN_SPHERE_RADIUS = 0.55     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ class NicsPlacerDialog(QDialog):
         layout = QVBoxLayout(self)
 
         info = QLabel(
-            "<b>Yellow</b> = available &nbsp;|&nbsp; "
+            "<b style='color:goldenrod'>Yellow</b> = available &nbsp;|&nbsp; "
             "<b style='color:red'>Red</b> = staged (click Apply to place) &nbsp;|&nbsp; "
             "<b style='color:green'>Green</b> = placed.  "
             "Click a sphere to toggle staging."
@@ -361,7 +361,7 @@ class NicsPlacerDialog(QDialog):
             if yellow_pts:
                 self._actor_yellow = plotter.add_mesh(
                     _glyph(yellow_pts), name="nics_yellow",
-                    color="yellow", opacity=0.55, pickable=True,
+                    color="gold", opacity=0.55, pickable=True,
                 )
             if red_pts:
                 self._actor_red = plotter.add_mesh(
