@@ -49,7 +49,7 @@ from .nics_math import (
 _GHOST_SYMBOLS = ("Bq", "H:")   # all recognised ghost atom labels
 _PICK_DIST_SQ = 1.0             # Å² snap threshold
 _SPHERE_RADIUS = 0.25
-_GREEN_SPHERE_RADIUS = 0.55     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
+_GREEN_SPHERE_RADIUS = 0.50     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
 
 
 # ---------------------------------------------------------------------------
@@ -108,18 +108,12 @@ def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
 
 
 def _remove_all_bq(mol):
-    """Return a new Mol with every ghost atom removed.
-
-    Catches three cases:
-      - custom_symbol in _GHOST_SYMBOLS  (Bq / H: as placed)
-      - atomic num 0 with no custom_symbol  (* produced by geometry optimisation)
-    """
+    """Return a new Mol with every Bq / H: ghost atom removed."""
     rw = Chem.RWMol(mol)
     to_remove = [
         a.GetIdx()
         for a in rw.GetAtoms()
-        if (a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS)
-        or (a.GetAtomicNum() == 0 and not a.HasProp("custom_symbol"))
+        if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS
     ]
     for idx in sorted(to_remove, reverse=True):
         rw.RemoveAtom(idx)
@@ -302,10 +296,7 @@ class NicsPlacerDialog(QDialog):
         conf = mol.GetConformer()
         bq_pos = []
         for atom in mol.GetAtoms():
-            if (
-                (atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS)
-                or (atom.GetAtomicNum() == 0 and not atom.HasProp("custom_symbol"))
-            ):
+            if atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS:
                 p = conf.GetAtomPosition(atom.GetIdx())
                 bq_pos.append(np.array([p.x, p.y, p.z]))
 
@@ -473,6 +464,23 @@ class NicsPlacerDialog(QDialog):
         self._ghost_symbol = self._sym_combo.currentData()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
         _save_plugin_settings(_plugin_settings)
+        self._retag_placed_atoms(self._ghost_symbol)
+
+    def _retag_placed_atoms(self, new_symbol: str):
+        """Relabel all atomic-num-0 atoms in the molecule to *new_symbol*."""
+        mol = self._context.current_molecule
+        if not mol:
+            return
+        changed = False
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 0:
+                old = atom.GetProp("custom_symbol") if atom.HasProp("custom_symbol") else None
+                if old != new_symbol:
+                    atom.SetProp("custom_symbol", new_symbol)
+                    changed = True
+        if changed:
+            self._context.current_molecule = mol
+            self._context.push_undo_checkpoint()
 
     def _selected_ring_indices(self) -> set:
         selected = {idx.row() for idx in self._table.selectedIndexes()}
@@ -552,10 +560,29 @@ class NicsPlacerDialog(QDialog):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _retag_bare_dummy_atoms(self):
+        """Convert atomic-num-0 atoms without a recognised custom_symbol to the
+        current ghost label.  These are * atoms left behind after geometry
+        optimisation strips the custom_symbol property from Bq / H: atoms."""
+        mol = self._context.current_molecule
+        if not mol:
+            return
+        # First stamp any bare * atoms with a placeholder so _retag_placed_atoms
+        # picks them up in one pass.
+        for atom in mol.GetAtoms():
+            if atom.GetAtomicNum() == 0 and not (
+                atom.HasProp("custom_symbol")
+                and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS
+            ):
+                atom.SetProp("custom_symbol", "")   # mark for retagging
+        self._retag_placed_atoms(self._ghost_symbol)
+
     def showEvent(self, event):
         super().showEvent(event)
         # Sync symbol from persistent settings before loading rings
         self.sync_symbol_from_settings()
+        # Retag any bare * atoms (post-optimisation) to the current ghost label
+        self._retag_bare_dummy_atoms()
         # Re-initialise after being hidden (e.g. closed then re-opened via registry)
         self._last_mol_id = id(self._context.current_molecule)
         self._load_rings()
