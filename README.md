@@ -46,7 +46,7 @@ A [MoleditPy](https://github.com/HiroYokoyama/python_molecular_editor) plugin th
 ### Plugin setting (`settings.json`)
 The selected ghost atom symbol is saved to `nics_placer/settings.json` whenever it is changed. This is the **user default** — it persists across all sessions and documents.
 
-### Project setting (`.moleditpy` project file)
+### Project setting (`.pmeprj` project file)
 When a project is saved, the current ghost symbol and all placed ghost atom indices are stored in the project file. Loading a project restores both, overriding the plugin default for that session. Closing the project (File → New) reverts to the plugin default from `settings.json`.
 
 ## Installation
