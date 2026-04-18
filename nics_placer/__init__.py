@@ -19,6 +19,11 @@ PLUGIN_DESCRIPTION = (
 )
 PLUGIN_CATEGORY = "3D Edit"
 
+# Module-level settings — persisted in project file and remembered within session
+_plugin_settings: dict = {"ghost_symbol": "Bq"}
+
+_GHOST_SYMBOLS = {"Bq", "H:"}
+
 
 def initialize(context):
     """MoleditPy V3 plugin entry point."""
@@ -54,23 +59,38 @@ def initialize(context):
 
     # ---------------------------------------------------------------
     # Project file persistence
-    # Save only the Bq atom positions (index → custom_symbol).
-    # On load, re-stamp custom_symbol onto the matching atom indices.
+    # Saves ghost_symbol preference + ghost atom indices → custom_symbol.
+    # On load, restores both.
     # ---------------------------------------------------------------
     def on_save():
+        result = {"ghost_symbol": _plugin_settings["ghost_symbol"]}
         mol = context.current_molecule
-        if not mol:
-            return None
-        labels = {
-            str(a.GetIdx()): a.GetProp("custom_symbol")
-            for a in mol.GetAtoms()
-            if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") == "Bq"
-        }
-        return {"bq_labels": labels} if labels else None
+        if mol:
+            labels = {
+                str(a.GetIdx()): a.GetProp("custom_symbol")
+                for a in mol.GetAtoms()
+                if a.HasProp("custom_symbol")
+                and a.GetProp("custom_symbol") in _GHOST_SYMBOLS
+            }
+            if labels:
+                result["bq_labels"] = labels
+        return result
 
     def on_load(data):
         if not isinstance(data, dict):
             return
+        # Restore ghost symbol preference
+        sym = data.get("ghost_symbol")
+        if sym in _GHOST_SYMBOLS:
+            _plugin_settings["ghost_symbol"] = sym
+            # Update open dialog's combo if visible
+            win = context.get_window("main_panel")
+            if win and hasattr(win, "sync_symbol_from_settings"):
+                try:
+                    win.sync_symbol_from_settings()
+                except Exception as _e:
+                    logging.warning("[nics_placer/__init__.py] sync combo: %s", _e)
+        # Restore ghost atom labels
         labels = data.get("bq_labels", {})
         if not labels:
             return
@@ -85,6 +105,7 @@ def initialize(context):
         context.current_molecule = mol
 
     def on_reset():
+        _plugin_settings["ghost_symbol"] = "Bq"
         win = context.get_window("main_panel")
         if win:
             try:

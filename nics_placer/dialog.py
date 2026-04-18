@@ -38,7 +38,7 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 import pyvista as pv
 
-from . import PLUGIN_NAME, PLUGIN_VERSION
+from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings
 from .nics_math import (
     NICS1_HEIGHT,
     compute_nics_points,
@@ -449,8 +449,19 @@ class NicsPlacerDialog(QDialog):
     # Stage helpers
     # ------------------------------------------------------------------
 
+    def sync_symbol_from_settings(self):
+        """Sync combo box to the current module-level ghost symbol setting."""
+        sym = _plugin_settings.get("ghost_symbol", "Bq")
+        idx = self._sym_combo.findData(sym)
+        if idx >= 0:
+            self._sym_combo.blockSignals(True)
+            self._sym_combo.setCurrentIndex(idx)
+            self._sym_combo.blockSignals(False)
+        self._ghost_symbol = sym
+
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()
+        _plugin_settings["ghost_symbol"] = self._ghost_symbol
 
     def _selected_ring_indices(self) -> set:
         selected = {idx.row() for idx in self._table.selectedIndexes()}
@@ -532,6 +543,8 @@ class NicsPlacerDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # Sync symbol from persistent settings before loading rings
+        self.sync_symbol_from_settings()
         # Re-initialise after being hidden (e.g. closed then re-opened via registry)
         self._last_mol_id = id(self._context.current_molecule)
         self._load_rings()

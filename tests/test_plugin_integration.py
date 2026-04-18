@@ -113,19 +113,20 @@ class TestSaveHandler(unittest.TestCase):
         self.ctx = _StubContext()
         initialize(self.ctx)
 
-    def test_save_none_when_no_molecule(self):
+    def test_save_always_includes_ghost_symbol(self):
         self.ctx.current_molecule = None
         result = self.ctx.save()
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
+        self.assertIn("ghost_symbol", result)
 
-    def test_save_none_when_no_bq_atoms(self):
+    def test_save_no_bq_labels_key_when_no_ghost_atoms(self):
         mol = MagicMock()
         atom = MagicMock()
         atom.HasProp.return_value = False
         mol.GetAtoms.return_value = [atom]
         self.ctx.current_molecule = mol
         result = self.ctx.save()
-        self.assertIsNone(result)
+        self.assertNotIn("bq_labels", result)
 
     def test_save_returns_bq_labels(self):
         mol = _make_mol_with_bq({2, 5})
@@ -174,6 +175,18 @@ class TestLoadHandler(unittest.TestCase):
     def test_load_empty_dict_is_safe(self):
         self.ctx.load({})  # should not raise
 
+    def test_load_restores_ghost_symbol(self):
+        import nics_placer as pkg
+        pkg._plugin_settings["ghost_symbol"] = "Bq"
+        self.ctx.load({"ghost_symbol": "H:"})
+        self.assertEqual(pkg._plugin_settings["ghost_symbol"], "H:")
+
+    def test_load_ignores_invalid_ghost_symbol(self):
+        import nics_placer as pkg
+        pkg._plugin_settings["ghost_symbol"] = "Bq"
+        self.ctx.load({"ghost_symbol": "INVALID"})
+        self.assertEqual(pkg._plugin_settings["ghost_symbol"], "Bq")
+
     def test_load_stamps_bq_labels(self):
         mol = MagicMock()
         atom = MagicMock()
@@ -202,6 +215,12 @@ class TestResetHandler(unittest.TestCase):
     def setUp(self):
         self.ctx = _StubContext()
         initialize(self.ctx)
+
+    def test_reset_restores_default_ghost_symbol(self):
+        import nics_placer as pkg
+        pkg._plugin_settings["ghost_symbol"] = "H:"
+        self.ctx.reset()
+        self.assertEqual(pkg._plugin_settings["ghost_symbol"], "Bq")
 
     def test_reset_when_no_window_is_safe(self):
         self.ctx.reset()  # should not raise

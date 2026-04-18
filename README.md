@@ -1,5 +1,7 @@
 # MoleditPy NICS Placer Plugin
 
+![NICS Placer](img/main.png)
+
 A [MoleditPy](https://github.com/HiroYokoyama/moleditpy) plugin that detects rings in the loaded molecule and places **Bq ghost atoms** at NICS(0) and NICS(1) probe positions for use in NICS (Nucleus-Independent Chemical Shift) calculations with ORCA.
 
 ## Features
