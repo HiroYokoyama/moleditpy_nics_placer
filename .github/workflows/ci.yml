@@ -28,5 +28,8 @@ jobs:
       - name: Install dependencies
         run: pip install numpy pytest
 
+      - name: Clone main MoleditPy application
+        run: git clone --depth 1 https://github.com/HiroYokoyama/python_molecular_editor.git ../python_molecular_editor || true
+
       - name: Run tests
         run: pytest tests/ -v
