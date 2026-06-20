@@ -29,6 +29,7 @@ PLUGIN_DESCRIPTION = (
     "Compatible with ORCA Input Generator Pro via the custom_symbol property."
 )
 PLUGIN_CATEGORY = "3D Edit"
+PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=3.0.0, <5.0.0"
 
 _SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 _GHOST_SYMBOLS = {"Bq", "H:"}
