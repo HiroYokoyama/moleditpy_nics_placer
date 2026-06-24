@@ -109,3 +109,7 @@ Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp
 ## Version
 
 1.0.0 — HiroYokoyama
+
+## License & Disclaimer
+
+This is open-source software distributed under the GNU GPL v3 license. It is provided 'as is' without warranty of any kind, and the author assumes no responsibility or liability for the results. Although outputs have been carefully verified, users are strongly encouraged to independently check and validate results for critical purposes (such as publications). If you encounter any bugs, please open an issue.
