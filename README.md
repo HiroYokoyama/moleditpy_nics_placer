@@ -1,7 +1,8 @@
-# MoleditPy NICS Placer Plugin
+﻿# MoleditPy NICS Placer Plugin
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20726104.svg)](https://doi.org/10.5281/zenodo.20726104)
 [![CI](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml/badge.svg)](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/github/downloads/HiroYokoyama/moleditpy_nics_placer/total)](https://github.com/HiroYokoyama/moleditpy_nics_placer/releases)
 
 ![NICS Placer](img/main.png)
 
@@ -11,17 +12,17 @@ A [MoleditPy](https://github.com/HiroYokoyama/python_molecular_editor) plugin th
 
 - Detects **all rings** (aromatic and non-aromatic) from the 3D structure
 - Computes NICS probe positions:
-  - **NICS(0)** — ring centroid (in-plane)
-  - **NICS(1)±** — ±1 Å above and below the ring plane (SVD best-fit plane)
+  - **NICS(0)** 窶・ring centroid (in-plane)
+  - **NICS(1)ﾂｱ** 窶・ﾂｱ1 ﾃ・above and below the ring plane (SVD best-fit plane)
 - Interactive **3-state sphere preview** in the 3D viewport:
 
   | Colour | Meaning | Interaction |
   |--------|---------|-------------|
-  | Yellow (semi-transparent) | Available, not staged | Click → turns red |
-  | Red (semi-transparent) | Staged for placement | Click → turns yellow; Apply → places atom |
+  | Yellow (semi-transparent) | Available, not staged | Click 竊・turns red |
+  | Red (semi-transparent) | Staged for placement | Click 竊・turns yellow; Apply 竊・places atom |
   | Green | Already placed in molecule | Clear All to remove |
 
-- **Ghost atom symbol selector** — choose per project or set a persistent default:
+- **Ghost atom symbol selector** 窶・choose per project or set a persistent default:
 
   | Symbol | Software |
   |--------|----------|
@@ -29,28 +30,28 @@ A [MoleditPy](https://github.com/HiroYokoyama/python_molecular_editor) plugin th
   | `H:` | ORCA native ghost atom notation |
 
 - Table view with per-ring status (size, aromaticity, placed/staged count)
-- Helper buttons: Stage NICS(0) / Stage NICS(1)± for selected rings, Place All, Clear All, Refresh
-- **Auto-refresh** — when the molecule changes (load, undo/redo), rings and spheres update automatically
+- Helper buttons: Stage NICS(0) / Stage NICS(1)ﾂｱ for selected rings, Place All, Clear All, Refresh
+- **Auto-refresh** 窶・when the molecule changes (load, undo/redo), rings and spheres update automatically
 - Compatible with **ORCA Input Generator Pro** and **Gaussian Input Generator Neo** via the shared `custom_symbol` atom property
 
 ## Workflow
 
 1. Load a molecule with 3D coordinates in MoleditPy.
-2. Open **3D Edit → NICS Placer…**
-3. Yellow spheres appear at all NICS(0), NICS(1)+, and NICS(1)− positions for every ring.
+2. Open **3D Edit 竊・NICS Placer窶ｦ**
+3. Yellow spheres appear at all NICS(0), NICS(1)+, and NICS(1)竏・positions for every ring.
 4. Click yellow spheres to stage them (turns red), or use the **Stage** buttons for bulk selection.
 5. Select ghost atom symbol (`Bq` or `H:`) from the combo box.
 6. Press **Apply (place red Bq)** to insert ghost atoms at all staged positions.
-7. Open **ORCA Input Generator Pro** or **Gaussian Input Generator Neo** — ghost labels appear automatically in the coordinate block.
+7. Open **ORCA Input Generator Pro** or **Gaussian Input Generator Neo** 窶・ghost labels appear automatically in the coordinate block.
 8. Run NICS calculation.
 
 ## Settings & Persistence
 
 ### Plugin setting (`settings.json`)
-The selected ghost atom symbol is saved to `nics_placer/settings.json` whenever it is changed. This is the **user default** — it persists across all sessions and documents.
+The selected ghost atom symbol is saved to `nics_placer/settings.json` whenever it is changed. This is the **user default** 窶・it persists across all sessions and documents.
 
 ### Project setting (`.pmeprj` project file)
-When a project is saved, the current ghost symbol and all placed ghost atom indices are stored in the project file. Loading a project restores both, overriding the plugin default for that session. Closing the project (File → New) reverts to the plugin default from `settings.json`.
+When a project is saved, the current ghost symbol and all placed ghost atom indices are stored in the project file. Loading a project restores both, overriding the plugin default for that session. Closing the project (File 竊・New) reverts to the plugin default from `settings.json`.
 
 ## Installation
 
@@ -59,15 +60,15 @@ Copy the `nics_placer/` folder into your MoleditPy plugins directory:
 ```
 moleditpy_nics_placer/
     nics_placer/
-        __init__.py      ← plugin entry point
-        dialog.py        ← NicsPlacerDialog (PyQt6 + PyVista)
-        nics_math.py     ← pure numpy ring geometry
-        settings.json    ← auto-created on first symbol change (gitignored)
+        __init__.py      竊・plugin entry point
+        dialog.py        竊・NicsPlacerDialog (PyQt6 + PyVista)
+        nics_math.py     竊・pure numpy ring geometry
+        settings.json    竊・auto-created on first symbol change (gitignored)
 ```
 
 ## Requirements
 
-- MoleditPy ≥ v3 (V3 plugin API)
+- MoleditPy 竕･ v3 (V3 plugin API)
 - PyQt6
 - RDKit
 - PyVista
@@ -97,7 +98,7 @@ The ring normal is computed via SVD of the mean-centred atom positions:
 centered = positions - mean(positions)
 U, S, Vt = SVD(centered)
 normal = Vt[-1]       # last singular vector = direction of minimum variance
-normal /= ‖normal‖
+normal /= 窶墨ormal窶・
 ```
 
 This gives the least-squares best-fit plane normal, robust for all planar and near-planar rings.
@@ -108,7 +109,7 @@ Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp
 
 ## Version
 
-1.0.0 — HiroYokoyama
+1.0.0 窶・HiroYokoyama
 
 ## License & Disclaimer
 
