@@ -54,6 +54,7 @@ jobs:
       - name: Build release package
         run: |
           TAG="$VERSION"
+          cp README.md LICENSE nics_placer/
           zip -r "nics_placer_${TAG}.zip" nics_placer/ --exclude "*/__pycache__/*" "*/.git/*"
 
       - name: Create GitHub Release
