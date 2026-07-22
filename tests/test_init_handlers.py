@@ -18,6 +18,16 @@ sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), ".."
 import nics_placer as pkg
 from nics_placer import initialize
 
+try:
+    import rdkit  # noqa: F401
+    _RDKIT_AVAILABLE = True
+except Exception:
+    _RDKIT_AVAILABLE = False
+
+needs_rdkit = pytest.mark.skipif(
+    not _RDKIT_AVAILABLE, reason="RDKit not importable (dialog import requires it)"
+)
+
 
 class _StubContext:
     def __init__(self):
@@ -98,6 +108,7 @@ def test_show_dialog_no_conformers_shows_status():
     assert "3D conversion" in ctx.show_status_message.call_args[0][0]
 
 
+@needs_rdkit
 def test_show_dialog_creates_and_registers_dialog():
     ctx = _StubContext()
     mol = MagicMock()
