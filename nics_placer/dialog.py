@@ -154,6 +154,7 @@ class NicsPlacerDialog(QDialog):
 
         # List of dicts: {'ring':int, 'type':str, 'pos':np.ndarray, 'state':str}
         self._nics_points: list = []
+        self._error_rings: set = set()   # ring indices whose NICS calc failed
         self._ghost_symbol: str = "Bq"   # "Bq" or "H:"
         self._click_filter = None
         # Actor references for pick-detection
@@ -246,6 +247,7 @@ class NicsPlacerDialog(QDialog):
     def _load_rings(self):
         mol = self._context.current_molecule
         self._nics_points = []
+        self._error_rings = set()
         self._table.setRowCount(0)
 
         if not mol or not mol.GetNumConformers():
@@ -261,6 +263,7 @@ class NicsPlacerDialog(QDialog):
                 nics = compute_nics_points(pts)
             except Exception as _e:
                 logging.warning("[dialog.py] ring %d NICS calc: %s", i, _e)
+                self._error_rings.add(i)
                 for col, val in enumerate([
                     str(i + 1), str(len(ring["atoms"])),
                     "Yes" if ring["is_aromatic"] else "No", "error",
@@ -310,6 +313,8 @@ class NicsPlacerDialog(QDialog):
 
     def _update_table_status(self):
         for ring_idx in range(self._table.rowCount()):
+            if ring_idx in self._error_rings:
+                continue  # keep the "error" status set in _load_rings
             pts = [p for p in self._nics_points if p["ring"] == ring_idx]
             n_placed  = sum(1 for p in pts if p["state"] == _STATE_PLACED)
             n_staged  = sum(1 for p in pts if p["state"] == _STATE_STAGED)
@@ -423,8 +428,13 @@ class NicsPlacerDialog(QDialog):
             picker.Pick(px, vtk_y, 0, plotter.renderer)
             picked = picker.GetActor()
 
-            # Only react to yellow or red sphere actors
-            if picked not in (self._actor_yellow, self._actor_red):
+            # Only react to yellow or red sphere actors. picked is None when
+            # the click misses everything — must be excluded explicitly since
+            # self._actor_red/_actor_yellow are also None when no spheres of
+            # that colour are currently rendered, which would otherwise make
+            # "picked nothing" falsely compare equal to "picked the (absent)
+            # red actor".
+            if picked is None or picked not in (self._actor_yellow, self._actor_red):
                 return
 
             pick_pos = np.array(picker.GetPickPosition(), dtype=float)
