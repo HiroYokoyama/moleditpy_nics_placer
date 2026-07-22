@@ -3,6 +3,7 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20726104.svg)](https://doi.org/10.5281/zenodo.20726104)
 [![CI](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml/badge.svg)](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/github/downloads/HiroYokoyama/moleditpy_nics_placer/total)](https://github.com/HiroYokoyama/moleditpy_nics_placer/releases)
+![Test Coverage](https://img.shields.io/badge/coverage->90%25-green)
 
 ![NICS Placer](img/main.png)
 
