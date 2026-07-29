@@ -1043,3 +1043,64 @@ def test_no_marker_once_the_molecule_is_gone():
     dlg._context.current_molecule = None
     dlg._render_spheres()
     assert not _marker_calls(dlg)
+
+
+# ---------------------------------------------------------------------------
+# Oversized grids
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_an_oversized_grid_is_refused_rather_than_built():
+    """The grid rebuilds on every spinbox tick; at the maximum 101 points per
+    axis that is over a million probes and seconds per keystroke."""
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 101, 101, 101)
+    assert dlg._grid_points == []
+    text = dlg._count_label.setText.call_args[0][0]
+    assert "too many" in text and "1,030,301" in text
+
+
+@needs_dialog
+def test_the_refusal_says_how_to_recover():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 101, 101, 101)
+    text = dlg._count_label.setText.call_args[0][0]
+    assert "step" in text and "point counts" in text
+
+
+@needs_dialog
+def test_a_grid_at_the_limit_still_builds():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 50, 50, 50)
+    assert len(dlg._grid_points) == 125000
+
+
+@needs_dialog
+def test_reducing_the_counts_recovers_from_a_refusal():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 101, 101, 101)
+    assert dlg._grid_points == []
+    _set_counts(dlg, 10, 10, 10)
+    assert len(dlg._grid_points) == 1000
+
+
+@needs_dialog
+def test_a_refused_grid_places_nothing():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 101, 101, 101)
+    dlg._place_grid()
+    dlg._context.push_undo_checkpoint.assert_not_called()
+
+
+@needs_dialog
+def test_2d_never_reaches_the_build_limit():
+    """101 x 101 is only ~10k probes, so the 2D maximum stays usable."""
+    dlg = _dialog()
+    _set_counts(dlg, 101, 101)
+    assert len(dlg._grid_points) == 10201

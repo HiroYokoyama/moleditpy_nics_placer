@@ -73,6 +73,12 @@ _CONFIRM_ABOVE = 400
 
 _GRID_SPHERE_RADIUS = 0.12  # smaller than the single-probe spheres: grids are dense
 
+#: Refuse to build a preview larger than this. Not a chemistry limit — an NMR
+#: job with this many ghost centres is not a real calculation anyway — but the
+#: grid is rebuilt on every spinbox tick, and 101^3 takes ~3 s, which reads as
+#: a hang. 200k builds in well under a second.
+_MAX_BUILD = 200_000
+
 #: Marks which ring a ring-frame grid is anchored to. Bigger than a probe
 #: sphere so it reads as a landmark rather than as one more grid point.
 _RING_MARKER_ACTOR = "nics_grid_ring_center"
@@ -504,6 +510,20 @@ class NicsGridDialog(QDialog):
                 counts = [row["n"].value() for row in self._axis_rows]
             else:
                 counts = [row["n"].value() for row in self._axis_rows]
+
+            # Check the size before building it. The grid is rebuilt on every
+            # spinbox tick, and at the maximum 101 points on all three axes
+            # that is over a million probes and ~3 s per keystroke — the
+            # dialog would appear to hang while you were still typing.
+            requested = counts[0] * counts[1] * (counts[2] if is3d else 1)
+            if requested > _MAX_BUILD:
+                self._grid_points = []
+                self._count_label.setText(
+                    f"<b style='color:red'>{requested:,} probes is too many to "
+                    f"preview</b> (limit {_MAX_BUILD:,}). Increase the step or "
+                    "reduce the point counts."
+                )
+                return
 
             common = dict(
                 plane=plane,
