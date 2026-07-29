@@ -2,6 +2,7 @@
 Integration tests for nics_placer/__init__.py — verifies plugin contract
 (save / load / reset handlers) without Qt, RDKit, or PyVista.
 """
+
 import sys
 import os
 import unittest
@@ -16,6 +17,7 @@ from nics_placer import initialize, PLUGIN_NAME, PLUGIN_VERSION
 # ---------------------------------------------------------------------------
 # Stub PluginContext
 # ---------------------------------------------------------------------------
+
 
 class _StubContext:
     def __init__(self):
@@ -64,6 +66,7 @@ class _StubContext:
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _make_mol_with_bq(bq_indices):
     """Return a mock mol that has Bq custom_symbol on given atom indices."""
     mol = MagicMock()
@@ -86,6 +89,7 @@ def _make_mol_with_bq(bq_indices):
 # Tests: metadata
 # ---------------------------------------------------------------------------
 
+
 class TestMetadata(unittest.TestCase):
     def test_plugin_name(self):
         self.assertEqual(PLUGIN_NAME, "NICS Placer")
@@ -98,21 +102,25 @@ class TestMetadata(unittest.TestCase):
     def test_initialize_registers_menu_action(self):
         ctx = _StubContext()
         initialize(ctx)
-        ctx.add_menu_action.assert_called_once()
-        path_arg = ctx.add_menu_action.call_args[0][0]
-        self.assertIn("3D Edit", path_arg)
-        self.assertIn("NICS", path_arg)
+        paths = [c[0][0] for c in ctx.add_menu_action.call_args_list]
+        self.assertEqual(len(paths), 2)
+        for path_arg in paths:
+            self.assertIn("3D Edit", path_arg)
+            self.assertIn("NICS", path_arg)
+        self.assertTrue(any("Grid" in p for p in paths))
 
 
 # ---------------------------------------------------------------------------
 # Tests: save handler
 # ---------------------------------------------------------------------------
 
+
 class TestSaveHandler(unittest.TestCase):
     def setUp(self):
         self.ctx = _StubContext()
         initialize(self.ctx)
         import nics_placer as pkg
+
         pkg._dialog_opened = False  # start clean
 
     def test_save_returns_none_before_dialog_opened(self):
@@ -121,6 +129,7 @@ class TestSaveHandler(unittest.TestCase):
 
     def test_save_includes_ghost_symbol_after_dialog_opened(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = True
         self.ctx.current_molecule = None
         result = self.ctx.save()
@@ -129,6 +138,7 @@ class TestSaveHandler(unittest.TestCase):
 
     def test_save_no_bq_labels_key_when_no_ghost_atoms(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = True
         mol = MagicMock()
         atom = MagicMock()
@@ -140,6 +150,7 @@ class TestSaveHandler(unittest.TestCase):
 
     def test_save_returns_bq_labels(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = True
         mol = _make_mol_with_bq({2, 5})
         self.ctx.current_molecule = mol
@@ -154,6 +165,7 @@ class TestSaveHandler(unittest.TestCase):
 
     def test_save_excludes_non_bq_atoms(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = True
         mol = MagicMock()
         atoms = []
@@ -178,6 +190,7 @@ class TestSaveHandler(unittest.TestCase):
 # Tests: load handler
 # ---------------------------------------------------------------------------
 
+
 class TestLoadHandler(unittest.TestCase):
     def setUp(self):
         self.ctx = _StubContext()
@@ -191,18 +204,21 @@ class TestLoadHandler(unittest.TestCase):
 
     def test_load_sets_dialog_opened_flag(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = False
         self.ctx.load({"ghost_symbol": "Bq"})
         self.assertTrue(pkg._dialog_opened)
 
     def test_load_restores_ghost_symbol(self):
         import nics_placer as pkg
+
         pkg._plugin_settings["ghost_symbol"] = "Bq"
         self.ctx.load({"ghost_symbol": "H:"})
         self.assertEqual(pkg._plugin_settings["ghost_symbol"], "H:")
 
     def test_load_ignores_invalid_ghost_symbol(self):
         import nics_placer as pkg
+
         pkg._plugin_settings["ghost_symbol"] = "Bq"
         self.ctx.load({"ghost_symbol": "INVALID"})
         self.assertEqual(pkg._plugin_settings["ghost_symbol"], "Bq")
@@ -231,6 +247,7 @@ class TestLoadHandler(unittest.TestCase):
 # Tests: reset handler
 # ---------------------------------------------------------------------------
 
+
 class TestResetHandler(unittest.TestCase):
     def setUp(self):
         self.ctx = _StubContext()
@@ -238,6 +255,7 @@ class TestResetHandler(unittest.TestCase):
 
     def test_reset_restores_plugin_setting(self):
         import nics_placer as pkg
+
         # Simulate project having overridden the symbol; reset should revert to plugin default
         pkg._plugin_settings["ghost_symbol"] = "H:"
         self.ctx.reset()
@@ -246,6 +264,7 @@ class TestResetHandler(unittest.TestCase):
 
     def test_reset_clears_dialog_opened_flag(self):
         import nics_placer as pkg
+
         pkg._dialog_opened = True
         self.ctx.reset()
         self.assertFalse(pkg._dialog_opened)
@@ -271,9 +290,11 @@ class TestResetHandler(unittest.TestCase):
 # Tests: roundtrip save → load
 # ---------------------------------------------------------------------------
 
+
 class TestRoundtrip(unittest.TestCase):
     def test_roundtrip_preserves_bq_labels(self):
         import nics_placer as pkg
+
         ctx1 = _StubContext()
         initialize(ctx1)
         pkg._dialog_opened = True

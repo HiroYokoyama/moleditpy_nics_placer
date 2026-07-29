@@ -8,6 +8,7 @@ Uses the same ``custom_symbol`` atom property as the XYZ Editor, so ORCA
 Input Generator Pro automatically renders the Bq labels in the coordinate
 block without any additional configuration.
 """
+
 import json
 import logging
 import os
@@ -22,10 +23,11 @@ except Exception:  # ImportError or OS-level DLL crash
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "1.1.3"
+PLUGIN_VERSION = "2.0.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = (
-    "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. "
+    "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions, "
+    "or as a 2D plane / 3D volume for NICS scans and ICSS maps. "
     "Compatible with ORCA Input Generator Pro via the custom_symbol property."
 )
 PLUGIN_CATEGORY = "3D Edit"
@@ -33,7 +35,7 @@ PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=3.0.0, <5.0.0"
 
 _SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 _GHOST_SYMBOLS = {"Bq", "H:"}
-_dialog_opened: bool = False   # guard: don't write to project file until plugin is used
+_dialog_opened: bool = False  # guard: don't write to project file until plugin is used
 
 
 def _default_settings() -> dict:
@@ -96,6 +98,7 @@ def initialize(context):
             return
 
         from .dialog import NicsPlacerDialog
+
         mw = context.get_main_window()
         dlg = NicsPlacerDialog(context, parent=mw)
         context.register_window("main_panel", dlg)
@@ -104,6 +107,38 @@ def initialize(context):
         dlg.show()
 
     context.add_menu_action("3D Edit/NICS Placer...", show_dialog)
+
+    def show_grid_dialog():
+        win = context.get_window("grid_panel")
+        if win:
+            win.show()
+            win.raise_()
+            win.activateWindow()
+            return
+
+        mol = context.current_molecule
+        if not mol:
+            context.show_status_message("No molecule loaded.", 3000)
+            return
+        if not mol.GetNumConformers():
+            context.show_status_message(
+                "Molecule has no 3D coordinates — run 3D conversion first.", 4000
+            )
+            return
+
+        from .grid_dialog import NicsGridDialog
+
+        mw = context.get_main_window()
+        dlg = NicsGridDialog(context, parent=mw)
+        context.register_window("grid_panel", dlg)
+        global _dialog_opened
+        _dialog_opened = True
+        dlg.show()
+
+    # No slash in the leaf name: the host splits the path on "/", so
+    # "NICS Grid (2D / 3D)..." would nest a "3D)..." item under a "NICS Grid (2D"
+    # submenu instead of adding one entry.
+    context.add_menu_action("3D Edit/NICS Grid (2D, 3D)...", show_grid_dialog)
 
     # ---------------------------------------------------------------
     # Project file persistence
@@ -168,7 +203,11 @@ def initialize(context):
             # Labels are applied in-place; no redraw needed here — the app's own
             # draw_molecule_3d call that follows the load will pick them up.
 
-        if _QTimer is not None and _QCoreApplication is not None and _QCoreApplication.instance() is not None:
+        if (
+            _QTimer is not None
+            and _QCoreApplication is not None
+            and _QCoreApplication.instance() is not None
+        ):
             # Running inside the real app — defer until the project-load
             # sequence has finished restoring the 3D molecule.
             _QTimer.singleShot(0, _apply_labels)
@@ -182,12 +221,15 @@ def initialize(context):
         # Restore plugin-level default from settings.json
         _plugin_settings.clear()
         _plugin_settings.update(_load_plugin_settings())
-        win = context.get_window("main_panel")
-        if win:
-            try:
-                win.close()
-            except Exception as _e:
-                logging.warning("[nics_placer/__init__.py] on_reset close: %s", _e)
+        for key in ("main_panel", "grid_panel"):
+            win = context.get_window(key)
+            if win:
+                try:
+                    win.close()
+                except Exception as _e:
+                    logging.warning(
+                        "[nics_placer/__init__.py] on_reset close %s: %s", key, _e
+                    )
 
     context.register_save_handler(on_save)
     context.register_load_handler(on_load)

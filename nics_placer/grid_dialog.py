@@ -1,0 +1,534 @@
+"""
+NicsGridDialog — place a sheet or a volume of Bq probes for a NICS scan.
+
+Where the main NICS Placer dialog puts three probes per ring, this one lays
+down an N x N plane (2D) or an N x N x M box (3D) so the shielding can be
+plotted as a surface or contoured as an isochemical-shielding surface (ICSS)
+rather than read off as single numbers. Two families of plane are offered —
+in 3D they fix the orientation of the box:
+
+  Ring frame  – follows the selected ring. 'parallel' at offset 1.0 is the
+                face map (a NICS(1) surface); the two perpendicular planes
+                contain the ring normal and give the side-on scan that shows
+                the ring-current cone.
+  Lab frame   – fixed XY / XZ / YZ cuts through the whole molecule, centred on
+                the heavy-atom bounding box and sized from it.
+
+Every probe is an ordinary Bq ghost atom, so the result drops straight into
+ORCA Input Generator Pro or a Gaussian NMR job exactly like the single-point
+probes do. Grids get large fast: N=21 is 441 atoms, and NMR cost grows with
+the number of centres, so the point count is shown live and confirmed above a
+threshold.
+"""
+
+import logging
+
+import numpy as np
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+import pyvista as pv
+
+from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
+from .dialog import _GHOST_SYMBOLS, _add_bq_atoms, _remove_all_bq
+from .nics_math import (
+    GRID_PLANE_LABELS,
+    GRID_PLANES,
+    LAB_GRID_PLANES,
+    axis_extents,
+    compute_nics_grid,
+    compute_nics_volume,
+    counts_for_spacing,
+    get_ring_positions,
+    get_rings,
+    molecular_reference_normal,
+    molecule_bounds,
+)
+
+#: Above this many probes the dialog asks before committing. An NMR job scales
+#: badly with ghost centres, and 441 (N=21) is already a long calculation --
+#: this is a "did you mean it", not a hard limit.
+_CONFIRM_ABOVE = 400
+
+_GRID_SPHERE_RADIUS = 0.12  # smaller than the single-probe spheres: grids are dense
+
+#: Preview spheres are decimated above this count — see _render_spheres.
+_PREVIEW_MAX = 2000
+
+
+class NicsGridDialog(QDialog):
+    """Configure and place a 2D grid of NICS probes."""
+
+    def __init__(self, context, parent=None):
+        super().__init__(parent)
+        self._context = context
+        self.setWindowTitle(f"NICS Grid (2D, 3D)  —  {PLUGIN_NAME} v{PLUGIN_VERSION}")
+        self.resize(560, 600)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
+        self._rings: list = []
+        self._grid_points: list = []
+        self._ghost_symbol: str = _plugin_settings.get("ghost_symbol", "Bq")
+        self._setup_ui()
+
+    # ------------------------------------------------------------------
+    # UI
+    # ------------------------------------------------------------------
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(
+            QLabel(
+                "Places an <b>N x N</b> sheet of Bq probes. Ring-frame planes follow "
+                "the ring selected below; lab planes cut the whole molecule."
+            )
+        )
+
+        self._table = QTableWidget()
+        self._table.setColumnCount(4)
+        self._table.setHorizontalHeaderLabels(["Ring", "Size", "Aromatic", "Planarity"])
+        self._table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table.setMaximumHeight(150)
+        self._table.itemSelectionChanged.connect(self._on_params_changed)
+        layout.addWidget(self._table)
+
+        form = QFormLayout()
+
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem("2D — plane of probes", "2d")
+        self._mode_combo.addItem("3D — volume of probes (ICSS)", "3d")
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        form.addRow("Mode:", self._mode_combo)
+
+        self._plane_combo = QComboBox()
+        for key in GRID_PLANES:
+            self._plane_combo.addItem(GRID_PLANE_LABELS[key], key)
+        self._plane_combo.currentIndexChanged.connect(self._on_plane_changed)
+        form.addRow("Plane:", self._plane_combo)
+
+        self._auto_extent = QCheckBox("Auto — fit each axis to the molecule")
+        self._auto_extent.setChecked(True)
+        self._auto_extent.toggled.connect(self._on_auto_toggled)
+        form.addRow("Half-widths:", self._auto_extent)
+
+        # Uniform spacing derives the counts from a step size instead. With
+        # independent half-widths, equal counts do NOT mean equal spacing, and
+        # it is the spacing that decides whether the sampled field is smooth
+        # enough to contour.
+        spacing_row = QHBoxLayout()
+        self._uniform_spacing = QCheckBox("Uniform spacing (cubic cells)")
+        self._uniform_spacing.toggled.connect(self._on_uniform_toggled)
+        spacing_row.addWidget(self._uniform_spacing)
+        self._spacing_spin = QDoubleSpinBox()
+        self._spacing_spin.setRange(0.05, 10.0)
+        self._spacing_spin.setSingleStep(0.1)
+        self._spacing_spin.setDecimals(2)
+        self._spacing_spin.setValue(0.5)
+        self._spacing_spin.setSuffix(" A")
+        self._spacing_spin.setEnabled(False)
+        self._spacing_spin.valueChanged.connect(self._on_params_changed)
+        spacing_row.addWidget(self._spacing_spin)
+        form.addRow("Step:", spacing_row)
+
+        # One row per axis: count + half-width, so a rectangular grid is as
+        # easy to ask for as a square one. Molecules are rarely square.
+        self._axis_rows = []
+        for slot in range(3):
+            row = QHBoxLayout()
+            n_spin = QSpinBox()
+            n_spin.setRange(1, 101)
+            n_spin.setValue(9)
+            n_spin.valueChanged.connect(self._on_params_changed)
+            row.addWidget(n_spin)
+            row.addWidget(QLabel("points over +/-"))
+            e_spin = QDoubleSpinBox()
+            e_spin.setRange(0.0, 100.0)
+            e_spin.setSingleStep(0.5)
+            e_spin.setDecimals(2)
+            e_spin.setValue(3.0)
+            e_spin.setSuffix(" A")
+            e_spin.setEnabled(False)
+            e_spin.valueChanged.connect(self._on_params_changed)
+            row.addWidget(e_spin)
+            label = QLabel(f"Axis {slot + 1}:")
+            form.addRow(label, row)
+            self._axis_rows.append({"label": label, "n": n_spin, "e": e_spin})
+
+        self._offset_spin = QDoubleSpinBox()
+        self._offset_spin.setRange(-50.0, 50.0)
+        self._offset_spin.setSingleStep(0.5)
+        self._offset_spin.setDecimals(2)
+        self._offset_spin.setValue(0.0)
+        self._offset_spin.setSuffix(" A")
+        self._offset_spin.valueChanged.connect(self._on_params_changed)
+        self._offset_row_label = QLabel("Offset along plane normal:")
+        form.addRow(self._offset_row_label, self._offset_spin)
+
+        self._sym_combo = QComboBox()
+        self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
+        self._sym_combo.addItem("H:  (ORCA native)", "H:")
+        self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
+        form.addRow("Ghost atom label:", self._sym_combo)
+
+        layout.addLayout(form)
+
+        self._count_label = QLabel()
+        self._count_label.setWordWrap(True)
+        layout.addWidget(self._count_label)
+
+        row = QHBoxLayout()
+        self._btn_place = QPushButton("Place Grid")
+        self._btn_place.setStyleSheet("font-weight:bold; padding:6px;")
+        self._btn_place.clicked.connect(self._place_grid)
+        row.addWidget(self._btn_place)
+
+        btn_clear = QPushButton("Clear All Bq")
+        btn_clear.clicked.connect(self._clear_all_bq)
+        row.addWidget(btn_clear)
+
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.clicked.connect(self._reload)
+        row.addWidget(btn_refresh)
+
+        row.addStretch()
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.close)
+        row.addWidget(btn_close)
+        layout.addLayout(row)
+
+    # ------------------------------------------------------------------
+    # Parameter handling
+    # ------------------------------------------------------------------
+
+    def _current_plane(self) -> str:
+        data = self._plane_combo.currentData()
+        return data if data in GRID_PLANES else "parallel"
+
+    def _selected_ring(self) -> int:
+        rows = {idx.row() for idx in self._table.selectedIndexes()}
+        return min(rows) if rows else 0
+
+    def _is_3d(self) -> bool:
+        return self._mode_combo.currentData() == "3d"
+
+    def _axis_labels(self) -> tuple:
+        """Names for the three grid axes under the current plane."""
+        plane = self._current_plane()
+        if plane in LAB_GRID_PLANES:
+            first, second = plane[0].upper(), plane[1].upper()
+            third = next(c for c in "XYZ" if c not in (first, second))
+            return (first, second, third)
+        if plane == "parallel":
+            return ("u (in plane)", "v (in plane)", "n (normal)")
+        if plane == "perpendicular_u":
+            return ("u (in plane)", "n (normal)", "v (in plane)")
+        return ("v (in plane)", "n (normal)", "u (in plane)")
+
+    def _active_axis_count(self) -> int:
+        return 3 if self._is_3d() else 2
+
+    def _refresh_axis_rows(self):
+        """Show one row per active axis, named for the current plane."""
+        names = self._axis_labels()
+        active = self._active_axis_count()
+        for slot, row in enumerate(self._axis_rows):
+            visible = slot < active
+            row["label"].setVisible(visible)
+            row["n"].setVisible(visible)
+            row["e"].setVisible(visible)
+            row["label"].setText(f"Axis {names[slot]}:")
+
+    def _on_plane_changed(self, _index):
+        # A ring-frame grid is anchored to one ring, so the ring table only
+        # matters for those; lab planes are molecule-wide.
+        self._table.setEnabled(self._current_plane() not in LAB_GRID_PLANES)
+        self._refresh_axis_rows()
+        self._on_params_changed()
+
+    def _on_mode_changed(self, _index):
+        is3d = self._is_3d()
+        self._refresh_axis_rows()
+        # In 3D the plane only sets the box orientation, so "offset" moves the
+        # whole box rather than picking a slice height.
+        self._offset_row_label.setText(
+            "Box centre offset along normal:" if is3d else "Offset along plane normal:"
+        )
+        self._plane_combo.setToolTip(
+            "In 3D mode the plane only fixes the box orientation." if is3d else ""
+        )
+        self._on_params_changed()
+
+    def _on_auto_toggled(self, checked):
+        for row in self._axis_rows:
+            row["e"].setEnabled(not checked)
+        self._on_params_changed()
+
+    def _on_uniform_toggled(self, checked):
+        # Counts become a function of the step size, so editing them directly
+        # would be a lie -- lock them and let the label report what came out.
+        self._spacing_spin.setEnabled(checked)
+        for row in self._axis_rows:
+            row["n"].setEnabled(not checked)
+        self._on_params_changed()
+
+    def _on_symbol_changed(self, _index):
+        self._ghost_symbol = self._sym_combo.currentData()
+        _plugin_settings["ghost_symbol"] = self._ghost_symbol
+        _save_plugin_settings(_plugin_settings)
+
+    def _on_params_changed(self, *_args):
+        self._rebuild_grid()
+        self._render_spheres()
+
+    def _rebuild_grid(self):
+        """Recompute probe positions from the current controls."""
+        self._grid_points = []
+        mol = self._context.current_molecule
+        if not mol or not mol.GetNumConformers():
+            self._count_label.setText("<i>No 3D molecule loaded.</i>")
+            return
+
+        plane = self._current_plane()
+        is3d = self._is_3d()
+        n_axes = self._active_axis_count()
+        try:
+            if plane in LAB_GRID_PLANES:
+                positions = None
+                center = molecule_bounds(mol)[0]
+            else:
+                if not self._rings:
+                    self._count_label.setText("<i>No rings detected.</i>")
+                    return
+                ring = self._rings[min(self._selected_ring(), len(self._rings) - 1)]
+                positions = get_ring_positions(mol, ring["atoms"])
+                center = None
+
+            reference = molecular_reference_normal(mol)
+            if self._auto_extent.isChecked():
+                extents = list(
+                    axis_extents(
+                        mol,
+                        plane,
+                        positions=positions,
+                        reference=reference,
+                        center=center,
+                    )
+                )
+                for row, value in zip(self._axis_rows, extents):
+                    row["e"].blockSignals(True)
+                    row["e"].setValue(value)
+                    row["e"].blockSignals(False)
+            else:
+                extents = [row["e"].value() for row in self._axis_rows]
+
+            if self._uniform_spacing.isChecked():
+                counts = list(counts_for_spacing(extents, self._spacing_spin.value()))
+                for row, value in zip(self._axis_rows, counts):
+                    row["n"].blockSignals(True)
+                    row["n"].setValue(value)
+                    row["n"].blockSignals(False)
+                    # setValue clamps to the spinbox range; read back what the
+                    # widget actually holds so the label cannot claim a count
+                    # the grid does not have.
+                counts = [row["n"].value() for row in self._axis_rows]
+            else:
+                counts = [row["n"].value() for row in self._axis_rows]
+
+            common = dict(
+                plane=plane,
+                n_points=counts[:2],
+                extent=extents[:2],
+                offset=self._offset_spin.value(),
+                reference=reference,
+                center=center,
+            )
+            if is3d:
+                self._grid_points = compute_nics_volume(
+                    positions,
+                    n_normal=counts[2],
+                    normal_extent=extents[2],
+                    **common,
+                )
+            else:
+                self._grid_points = compute_nics_grid(positions, **common)
+        except Exception as _e:
+            logging.warning("[grid_dialog.py] _rebuild_grid: %s", _e)
+            self._count_label.setText(f"<b style='color:red'>Grid error:</b> {_e}")
+            return
+
+        total = len(self._grid_points)
+        warn = (
+            "  <b style='color:#b26b00'>&mdash; large; NMR cost grows with "
+            "ghost centres.</b>"
+            if total > _CONFIRM_ABOVE
+            else ""
+        )
+        names = self._axis_labels()
+        shape = " x ".join(str(c) for c in counts[:n_axes])
+        detail = "; ".join(
+            f"{names[k]} {self._step(counts[k], extents[k]):.2f} A "
+            f"over +/-{extents[k]:.2f} A"
+            for k in range(n_axes)
+        )
+        self._count_label.setText(
+            f"{shape} = <b>{total}</b> probes &mdash; {detail}.{warn}"
+        )
+
+    @staticmethod
+    def _step(count, extent):
+        return (2.0 * extent) / (count - 1) if count > 1 else 0.0
+
+    # ------------------------------------------------------------------
+    # Rings
+    # ------------------------------------------------------------------
+
+    def _reload(self):
+        mol = self._context.current_molecule
+        self._rings = get_rings(mol) if mol and mol.GetNumConformers() else []
+        self._table.setRowCount(len(self._rings))
+        for i, ring in enumerate(self._rings):
+            planarity = ""
+            try:
+                pts = get_ring_positions(mol, ring["atoms"])
+                from .nics_math import planarity_rms
+
+                planarity = f"{planarity_rms(pts):.3f} A"
+            except Exception as _e:
+                logging.warning("[grid_dialog.py] ring %d planarity: %s", i, _e)
+            for col, val in enumerate(
+                [
+                    str(i + 1),
+                    str(len(ring["atoms"])),
+                    "Yes" if ring["is_aromatic"] else "No",
+                    planarity,
+                ]
+            ):
+                self._table.setItem(i, col, QTableWidgetItem(val))
+        if self._rings and not self._table.selectedIndexes():
+            self._table.selectRow(0)
+        self._on_params_changed()
+
+    # ------------------------------------------------------------------
+    # Rendering
+    # ------------------------------------------------------------------
+
+    def _render_spheres(self):
+        plotter = self._context.plotter
+        if plotter is None:
+            return
+        try:
+            plotter.remove_actor("nics_grid")
+            if self._grid_points:
+                pts = np.array([p["pos"] for p in self._grid_points], dtype=float)
+                # A 3D box runs to thousands of spheres; glyphing all of them
+                # stalls the viewer on every spinbox tick. The preview only has
+                # to show where the box sits, so thin it out — placement still
+                # uses every point.
+                if len(pts) > _PREVIEW_MAX:
+                    stride = int(np.ceil(len(pts) / _PREVIEW_MAX))
+                    pts = pts[::stride]
+                poly = pv.PolyData(pts)
+                poly["r"] = [_GRID_SPHERE_RADIUS] * len(pts)
+                mesh = poly.glyph(geom=pv.Sphere(radius=1.0), scale="r", orient=False)
+                plotter.add_mesh(
+                    mesh,
+                    name="nics_grid",
+                    color="deepskyblue",
+                    opacity=0.5,
+                    pickable=False,
+                )
+            plotter.render()
+        except Exception as _e:
+            logging.warning("[grid_dialog.py] _render_spheres: %s", _e)
+
+    def _clear_actors(self):
+        try:
+            plotter = self._context.plotter
+            if plotter:
+                plotter.remove_actor("nics_grid")
+                plotter.render()
+        except Exception as _e:
+            logging.warning("[grid_dialog.py] _clear_actors: %s", _e)
+
+    # ------------------------------------------------------------------
+    # Placement
+    # ------------------------------------------------------------------
+
+    def _place_grid(self):
+        if not self._grid_points:
+            return
+        mol = self._context.current_molecule
+        if not mol:
+            return
+        total = len(self._grid_points)
+        if total > _CONFIRM_ABOVE:
+            reply = QMessageBox.question(
+                self,
+                "Large grid",
+                f"This will add {total} ghost atoms to the molecule.\n\n"
+                "NMR calculation cost grows with the number of ghost centres, "
+                "and the 3D view will slow down.\n\nPlace them anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        positions = [p["pos"] for p in self._grid_points]
+        self._context.current_molecule = _add_bq_atoms(
+            mol, positions, symbol=self._ghost_symbol
+        )
+        self._context.push_undo_checkpoint()
+        self._context.show_status_message(f"Placed {total} NICS grid probes.", 3000)
+        QTimer.singleShot(150, self._render_spheres)
+
+    def _clear_all_bq(self):
+        mol = self._context.current_molecule
+        if not mol:
+            return
+        self._context.current_molecule = _remove_all_bq(mol)
+        self._context.push_undo_checkpoint()
+        QTimer.singleShot(150, self._render_spheres)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def sync_symbol_from_settings(self):
+        sym = _plugin_settings.get("ghost_symbol", "Bq")
+        idx = self._sym_combo.findData(sym)
+        if idx >= 0:
+            self._sym_combo.blockSignals(True)
+            self._sym_combo.setCurrentIndex(idx)
+            self._sym_combo.blockSignals(False)
+        self._ghost_symbol = sym if sym in _GHOST_SYMBOLS else "Bq"
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.sync_symbol_from_settings()
+        self._on_mode_changed(self._mode_combo.currentIndex())
+        self._on_plane_changed(self._plane_combo.currentIndex())
+        self._reload()
+
+    def closeEvent(self, event):
+        self._clear_actors()
+        super().closeEvent(event)

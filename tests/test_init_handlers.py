@@ -4,6 +4,7 @@ branches, and the deferred vs. immediate _apply_labels path in on_load.
 Relies on the rich PyQt6/pyvista stubs installed by tests/conftest.py so
 that `from .dialog import NicsPlacerDialog` succeeds headlessly.
 """
+
 import builtins
 import importlib
 import json
@@ -20,6 +21,7 @@ from nics_placer import initialize
 
 try:
     import rdkit  # noqa: F401
+
     _RDKIT_AVAILABLE = True
 except Exception:
     _RDKIT_AVAILABLE = False
@@ -60,9 +62,10 @@ class _StubContext:
         self._load_handler(data)
 
 
-def _get_show_dialog(ctx):
+def _get_show_dialog(ctx, index=0):
+    """Callback registered for menu entry *index* (0 = placer, 1 = grid)."""
     initialize(ctx)
-    return ctx.add_menu_action.call_args[0][1]
+    return ctx.add_menu_action.call_args_list[index][0][1]
 
 
 @pytest.fixture(autouse=True)
@@ -75,6 +78,7 @@ def _reset_dialog_opened():
 # ---------------------------------------------------------------------------
 # show_dialog
 # ---------------------------------------------------------------------------
+
 
 def test_show_dialog_reuses_existing_window():
     ctx = _StubContext()
@@ -121,8 +125,58 @@ def test_show_dialog_creates_and_registers_dialog():
 
 
 # ---------------------------------------------------------------------------
+# show_grid_dialog — the second menu entry, registered under its own key so
+# both panels can be open at once.
+# ---------------------------------------------------------------------------
+
+
+def test_grid_dialog_reuses_existing_window():
+    ctx = _StubContext()
+    win = MagicMock()
+    ctx._windows["grid_panel"] = win
+    _get_show_dialog(ctx, 1)()
+    win.show.assert_called_once()
+    win.raise_.assert_called_once()
+    win.activateWindow.assert_called_once()
+
+
+def test_grid_dialog_no_molecule_shows_status():
+    ctx = _StubContext()
+    ctx.current_molecule = None
+    _get_show_dialog(ctx, 1)()
+    assert "No molecule" in ctx.show_status_message.call_args[0][0]
+    assert ctx.get_window("grid_panel") is None
+
+
+def test_grid_dialog_no_conformers_shows_status():
+    ctx = _StubContext()
+    mol = MagicMock()
+    mol.GetNumConformers.return_value = 0
+    ctx.current_molecule = mol
+    _get_show_dialog(ctx, 1)()
+    assert "3D conversion" in ctx.show_status_message.call_args[0][0]
+    assert ctx.get_window("grid_panel") is None
+
+
+@needs_rdkit
+def test_grid_dialog_creates_and_registers_under_its_own_key():
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    mol = Chem.AddHs(Chem.MolFromSmiles("c1ccccc1"))
+    AllChem.EmbedMolecule(mol, randomSeed=42)
+    ctx = _StubContext()
+    ctx.current_molecule = mol
+    _get_show_dialog(ctx, 1)()
+    assert ctx.get_window("grid_panel") is not None
+    assert ctx.get_window("main_panel") is None
+    assert pkg._dialog_opened is True
+
+
+# ---------------------------------------------------------------------------
 # _load_plugin_settings / _save_plugin_settings error branches
 # ---------------------------------------------------------------------------
+
 
 def test_load_plugin_settings_file_not_found(tmp_path, monkeypatch):
     missing = tmp_path / "does_not_exist.json"
@@ -147,7 +201,9 @@ def test_load_plugin_settings_non_dict_json(tmp_path, monkeypatch):
     assert result == {"ghost_symbol": "Bq"}
 
 
-def test_load_plugin_settings_invalid_ghost_symbol_defaults_to_bq(tmp_path, monkeypatch):
+def test_load_plugin_settings_invalid_ghost_symbol_defaults_to_bq(
+    tmp_path, monkeypatch
+):
     f = tmp_path / "settings.json"
     f.write_text(json.dumps({"ghost_symbol": "nonsense"}), encoding="utf-8")
     monkeypatch.setattr(pkg, "_SETTINGS_FILE", str(f))
@@ -171,13 +227,16 @@ def test_save_plugin_settings_writes_file(tmp_path, monkeypatch):
 
 
 def test_save_plugin_settings_swallows_write_error(monkeypatch):
-    monkeypatch.setattr(pkg, "_SETTINGS_FILE", "Z:\\this\\path\\does\\not\\exist\\settings.json")
+    monkeypatch.setattr(
+        pkg, "_SETTINGS_FILE", "Z:\\this\\path\\does\\not\\exist\\settings.json"
+    )
     pkg._save_plugin_settings({"ghost_symbol": "Bq"})  # should not raise
 
 
 # ---------------------------------------------------------------------------
 # on_load: sync_symbol_from_settings callback + exception branch
 # ---------------------------------------------------------------------------
+
 
 def test_on_load_calls_sync_symbol_from_settings_on_window():
     ctx = _StubContext()

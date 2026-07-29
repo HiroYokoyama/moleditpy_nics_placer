@@ -10,6 +10,7 @@ instantiated and driven directly in tests without a real Qt runtime.
 minimal stub (see ``tests/test_dialog.py``) can still build local stub
 classes without clobbering what's already registered here.
 """
+
 import sys
 import types
 from unittest.mock import MagicMock
@@ -42,12 +43,19 @@ class _QBase:
 class _FakeTableWidgetItem:
     def __init__(self, text=""):
         self._text = text
+        self._tooltip = ""
 
     def text(self):
         return self._text
 
     def setText(self, text):
         self._text = text
+
+    def setToolTip(self, text):
+        self._tooltip = text
+
+    def toolTip(self):
+        return self._tooltip
 
 
 class _FakeIndex:
@@ -97,9 +105,64 @@ class _FakeTableWidget(_QBase):
     def selectedIndexes(self):
         return [_FakeIndex(r) for r in self._selected_rows]
 
+    def selectRow(self, row):
+        self._selected_rows = [row]
+
     # test helper (not part of the real QTableWidget API)
     def _set_selected_rows(self, rows):
         self._selected_rows = list(rows)
+
+
+class _FakeSpinBox(_QBase):
+    """QSpinBox / QDoubleSpinBox stand-in with real value + range state.
+
+    The grid dialog reads these back to size the probe grid, so a MagicMock
+    would silently feed a Mock into the arithmetic instead of a number.
+    """
+
+    _cast = int
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._value = self._cast(0)
+        self._min, self._max = self._cast(0), self._cast(99)
+        self._enabled = True
+        self.valueChanged = MagicMock()
+
+    def setEnabled(self, b):
+        self._enabled = bool(b)
+
+    def isEnabled(self):
+        return self._enabled
+
+    def setRange(self, lo, hi):
+        self._min, self._max = self._cast(lo), self._cast(hi)
+
+    def setValue(self, v):
+        self._value = min(max(self._cast(v), self._min), self._max)
+
+    def value(self):
+        return self._value
+
+    def blockSignals(self, b):
+        return False
+
+
+class _FakeDoubleSpinBox(_FakeSpinBox):
+    _cast = float
+
+
+class _FakeCheckBox(_QBase):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._checked = False
+        self.toggled = MagicMock()
+
+    def setChecked(self, b):
+        self._checked = bool(b)
+
+    def isChecked(self):
+        return self._checked
 
 
 class _FakeComboBox(_QBase):
@@ -137,7 +200,9 @@ class _FakeComboBox(_QBase):
 
 def install_qt_stubs():
     """Install rich PyQt6 / pyvista stubs into sys.modules (idempotent)."""
-    if "PyQt6" in sys.modules and getattr(sys.modules["PyQt6"], "_nics_placer_rich_stub", False):
+    if "PyQt6" in sys.modules and getattr(
+        sys.modules["PyQt6"], "_nics_placer_rich_stub", False
+    ):
         return
 
     class _Qt:
@@ -209,6 +274,30 @@ def install_qt_stubs():
     qt_widgets.QTableWidget = _FakeTableWidget
     qt_widgets.QTableWidgetItem = _FakeTableWidgetItem
     qt_widgets.QVBoxLayout = MagicMock()
+    qt_widgets.QCheckBox = _FakeCheckBox
+    qt_widgets.QDoubleSpinBox = _FakeDoubleSpinBox
+    qt_widgets.QFormLayout = MagicMock()
+    qt_widgets.QSpinBox = _FakeSpinBox
+
+    class _QMessageBox:
+        """Records questions instead of showing them; default answer is No.
+
+        Tests set ``_answer`` to drive the large-grid confirmation both ways.
+        """
+
+        class StandardButton:
+            Yes = 1
+            No = 0
+
+        _answer = 0
+        _calls = []
+
+        @staticmethod
+        def question(*args, **kwargs):
+            _QMessageBox._calls.append((args, kwargs))
+            return _QMessageBox._answer
+
+    qt_widgets.QMessageBox = _QMessageBox
 
     pyqt6 = types.ModuleType("PyQt6")
     pyqt6.QtCore = qt_core

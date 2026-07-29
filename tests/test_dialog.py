@@ -2,6 +2,7 @@
 Tests for nics_placer/dialog.py — Bq atom helpers and click-filter logic.
 PyQt6 and pyvista are stubbed so tests run headlessly.
 """
+
 import sys
 import os
 import types
@@ -13,6 +14,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Qt and pyvista stubs — must install BEFORE importing nics_placer.dialog
 # ---------------------------------------------------------------------------
+
 
 def _install_stubs():
     class _QBase:
@@ -79,6 +81,7 @@ try:
         _STATE_STAGED,
         _STATE_PLACED,
     )
+
     _DIALOG_AVAILABLE = Chem is not None
 except Exception:
     pass
@@ -91,6 +94,7 @@ needs_dialog = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _benzene_3d():
     mol = Chem.MolFromSmiles("c1ccccc1")
@@ -113,6 +117,7 @@ def _make_event(event_type, button_val, x, y):
 # ---------------------------------------------------------------------------
 # _add_bq_atom
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_add_bq_atom_increases_atom_count():
@@ -177,6 +182,7 @@ def test_add_two_bq_atoms_accumulate():
 # _remove_all_bq
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_remove_all_bq_removes_ghost_atoms():
     mol = _benzene_3d()
@@ -226,6 +232,7 @@ def test_remove_all_bq_no_ghost_custom_symbol_remains():
 # _ClickFilter
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_click_filter_press_position_starts_none():
     f = _ClickFilter(MagicMock())
@@ -236,7 +243,9 @@ def test_click_filter_press_position_starts_none():
 def test_click_filter_records_press_on_left_button():
     callback = MagicMock()
     f = _ClickFilter(callback)
-    event = _make_event(_QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 50, 80)
+    event = _make_event(
+        _QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 50, 80
+    )
     f.eventFilter(MagicMock(), event)
     assert f._press_pos is not None
 
@@ -244,7 +253,9 @@ def test_click_filter_records_press_on_left_button():
 @needs_dialog
 def test_click_filter_eventfilter_returns_false():
     f = _ClickFilter(MagicMock())
-    event = _make_event(_QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 10, 10)
+    event = _make_event(
+        _QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 10, 10
+    )
     assert f.eventFilter(MagicMock(), event) is False
 
 
@@ -254,9 +265,22 @@ def test_click_filter_fires_callback_on_small_drag():
     f = _ClickFilter(callback)
     obj = MagicMock()
     # Press at (100, 100)
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 100, 100))
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 100, 100
+        ),
+    )
     # Release at (101, 100) — dx=1, dy=0 → distance² = 1 ≤ 25
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonRelease, _Qt_cls.MouseButton.LeftButton, 101, 100))
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonRelease,
+            _Qt_cls.MouseButton.LeftButton,
+            101,
+            100,
+        ),
+    )
     callback.assert_called_once_with(101, 100, obj)
 
 
@@ -266,8 +290,18 @@ def test_click_filter_does_not_fire_on_large_drag():
     f = _ClickFilter(callback)
     obj = MagicMock()
     # Press at (0, 0), release at (20, 20) → distance² = 800 > 25
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 0, 0))
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonRelease, _Qt_cls.MouseButton.LeftButton, 20, 20))
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 0, 0
+        ),
+    )
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonRelease, _Qt_cls.MouseButton.LeftButton, 20, 20
+        ),
+    )
     callback.assert_not_called()
 
 
@@ -275,14 +309,25 @@ def test_click_filter_does_not_fire_on_large_drag():
 def test_click_filter_resets_press_pos_after_release():
     f = _ClickFilter(MagicMock())
     obj = MagicMock()
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 10, 10))
-    f.eventFilter(obj, _make_event(_QEvent_cls.Type.MouseButtonRelease, _Qt_cls.MouseButton.LeftButton, 10, 10))
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonPress, _Qt_cls.MouseButton.LeftButton, 10, 10
+        ),
+    )
+    f.eventFilter(
+        obj,
+        _make_event(
+            _QEvent_cls.Type.MouseButtonRelease, _Qt_cls.MouseButton.LeftButton, 10, 10
+        ),
+    )
     assert f._press_pos is None
 
 
 # ---------------------------------------------------------------------------
 # State constants
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_state_constants_are_distinct():

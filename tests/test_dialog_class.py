@@ -2,6 +2,7 @@
 Tests for NicsPlacerDialog itself — instantiated headlessly against the
 rich PyQt6 / pyvista stubs installed by tests/conftest.py.
 """
+
 import sys
 import os
 import types
@@ -24,6 +25,7 @@ try:
         _STATE_STAGED,
         _STATE_PLACED,
     )
+
     _DIALOG_AVAILABLE = Chem is not None
 except Exception:
     pass
@@ -37,6 +39,7 @@ needs_dialog = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _benzene_3d():
     mol = Chem.MolFromSmiles("c1ccccc1")
     mol = Chem.AddHs(mol)
@@ -48,8 +51,8 @@ class _StubContext:
     def __init__(self, mol=None):
         self.current_molecule = mol
         self.plotter = MagicMock(name="plotter")
-        self.plotter.add_mesh.side_effect = (
-            lambda mesh, name=None, **kw: MagicMock(name=f"actor_{name}")
+        self.plotter.add_mesh.side_effect = lambda mesh, name=None, **kw: MagicMock(
+            name=f"actor_{name}"
         )
         self._windows = {}
         self.push_undo_checkpoint = MagicMock()
@@ -67,6 +70,7 @@ class _StubContext:
 
 class _FakeVtkModule:
     """Swapped into sys.modules['vtk'] for _on_plotter_click tests."""
+
     picked_actor = None
     pick_position = (0.0, 0.0, 0.0)
 
@@ -111,6 +115,7 @@ def _make_widget(ratio=1.0, height=100):
 # Construction
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_dialog_construction_does_not_raise():
     ctx = _StubContext()
@@ -130,6 +135,7 @@ def test_dialog_construction_initial_state():
 # ---------------------------------------------------------------------------
 # _load_rings
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_load_rings_no_molecule():
@@ -182,6 +188,7 @@ def test_load_rings_ring_calc_exception_sets_error_status(monkeypatch):
 # ---------------------------------------------------------------------------
 # _sync_placed_status / _update_table_status
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_sync_placed_status_marks_matching_bq_as_placed():
@@ -256,6 +263,7 @@ def test_update_table_status_plain_fraction():
 # _render_spheres / _clear_actors
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_render_spheres_no_plotter_is_noop():
     ctx = _StubContext(mol=_benzene_3d())
@@ -269,9 +277,24 @@ def test_render_spheres_creates_actors_for_each_state():
     ctx = _StubContext(mol=_benzene_3d())
     dlg = NicsPlacerDialog(ctx)
     dlg._nics_points = [
-        {"ring": 0, "type": "nics0", "pos": np.array([0.0, 0.0, 0.0]), "state": _STATE_UNSET},
-        {"ring": 0, "type": "nics1_above", "pos": np.array([0.0, 0.0, 1.0]), "state": _STATE_STAGED},
-        {"ring": 0, "type": "nics1_below", "pos": np.array([0.0, 0.0, -1.0]), "state": _STATE_PLACED},
+        {
+            "ring": 0,
+            "type": "nics0",
+            "pos": np.array([0.0, 0.0, 0.0]),
+            "state": _STATE_UNSET,
+        },
+        {
+            "ring": 0,
+            "type": "nics1_above",
+            "pos": np.array([0.0, 0.0, 1.0]),
+            "state": _STATE_STAGED,
+        },
+        {
+            "ring": 0,
+            "type": "nics1_below",
+            "pos": np.array([0.0, 0.0, -1.0]),
+            "state": _STATE_PLACED,
+        },
     ]
     dlg._render_spheres()
     assert dlg._actor_yellow is not None
@@ -312,6 +335,7 @@ def test_clear_actors_swallows_exception():
 # ---------------------------------------------------------------------------
 # _enable_picking / _disable_picking
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_enable_picking_installs_filter():
@@ -374,6 +398,7 @@ def test_disable_picking_swallows_exception():
 # _on_plotter_click
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_on_plotter_click_no_plotter_is_noop(fake_vtk):
     ctx = _StubContext(mol=_benzene_3d())
@@ -393,7 +418,8 @@ def test_on_plotter_click_missing_pick_ignored_even_with_no_red_actor(fake_vtk):
     assert dlg._actor_red is None  # nothing staged -> no red actor rendered
     fake_vtk.picked_actor = None
     fake_vtk.pick_position = tuple(
-        float(v) for v in next(p for p in dlg._nics_points if p["type"] == "nics0")["pos"]
+        float(v)
+        for v in next(p for p in dlg._nics_points if p["type"] == "nics0")["pos"]
     )
     dlg._on_plotter_click(1, 1, _make_widget())
     assert all(p["state"] == _STATE_UNSET for p in dlg._nics_points)
@@ -459,6 +485,7 @@ def test_on_plotter_click_swallows_exception(fake_vtk):
 # Symbol combo sync
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_sync_symbol_from_settings_default_bq():
     ctx = _StubContext(mol=_benzene_3d())
@@ -489,7 +516,9 @@ def test_on_symbol_changed_saves_settings_and_retags(monkeypatch):
     saved = {}
     monkeypatch.setattr(dialog_mod, "_save_plugin_settings", lambda s: saved.update(s))
     called = {}
-    monkeypatch.setattr(dlg, "_retag_placed_atoms", lambda sym: called.setdefault("sym", sym))
+    monkeypatch.setattr(
+        dlg, "_retag_placed_atoms", lambda sym: called.setdefault("sym", sym)
+    )
 
     dlg._on_symbol_changed(1)
     assert dlg._ghost_symbol == "H:"
@@ -501,6 +530,7 @@ def test_on_symbol_changed_saves_settings_and_retags(monkeypatch):
 # ---------------------------------------------------------------------------
 # _retag_placed_atoms / _retag_bare_dummy_atoms
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_retag_placed_atoms_no_molecule_is_noop():
@@ -547,6 +577,7 @@ def test_retag_bare_dummy_atoms_stamps_bare_dummies():
     idx = rw.AddAtom(atom)
     conf = rw.GetConformer()
     from rdkit.Geometry import Point3D
+
     conf.SetAtomPosition(idx, Point3D(0.0, 0.0, 2.0))
     mol2 = rw.GetMol()
 
@@ -561,6 +592,7 @@ def test_retag_bare_dummy_atoms_stamps_bare_dummies():
 # ---------------------------------------------------------------------------
 # _selected_ring_indices / _stage_rings
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_selected_ring_indices_none_selected_returns_all_rows():
@@ -618,6 +650,7 @@ def test_stage_rings_noop_when_nothing_changes():
 # ---------------------------------------------------------------------------
 # Placement: _apply_staged / _place_all / _clear_all_bq
 # ---------------------------------------------------------------------------
+
 
 @needs_dialog
 def test_apply_staged_noop_when_nothing_staged():
@@ -692,13 +725,16 @@ def test_clear_all_bq_removes_placed_atoms():
 # _check_molecule_changed
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_check_molecule_changed_same_id_no_reload(monkeypatch):
     ctx = _StubContext(mol=_benzene_3d())
     dlg = NicsPlacerDialog(ctx)
     dlg._load_rings()
     called = {"n": 0}
-    monkeypatch.setattr(dlg, "_load_rings", lambda: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr(
+        dlg, "_load_rings", lambda: called.__setitem__("n", called["n"] + 1)
+    )
     dlg._check_molecule_changed()
     assert called["n"] == 0
 
@@ -708,7 +744,9 @@ def test_check_molecule_changed_new_mol_triggers_reload(monkeypatch):
     ctx = _StubContext(mol=_benzene_3d())
     dlg = NicsPlacerDialog(ctx)
     called = {"n": 0}
-    monkeypatch.setattr(dlg, "_load_rings", lambda: called.__setitem__("n", called["n"] + 1))
+    monkeypatch.setattr(
+        dlg, "_load_rings", lambda: called.__setitem__("n", called["n"] + 1)
+    )
     ctx.current_molecule = _benzene_3d()  # new object -> different id()
     dlg._check_molecule_changed()
     assert called["n"] == 1
@@ -745,6 +783,7 @@ def test_check_molecule_changed_swallows_exception():
 # showEvent / closeEvent
 # ---------------------------------------------------------------------------
 
+
 @needs_dialog
 def test_show_event_full_flow():
     ctx = _StubContext(mol=_benzene_3d())
@@ -774,3 +813,60 @@ def test_close_event_stops_timer_and_disables_picking():
     assert dlg._poll_timer.isActive() is False
     assert dlg._click_filter is None
     assert dlg._actor_yellow is None
+
+
+# ---------------------------------------------------------------------------
+# Planarity column and reference-normal handling
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_planarity_column_reports_a_flat_ring_without_a_warning():
+    ctx = _StubContext(mol=_benzene_3d())
+    dlg = NicsPlacerDialog(ctx)
+    dlg.showEvent(MagicMock())
+    text = dlg._table.item(0, 4).text()
+    assert "⚠" not in text
+    assert float(text.split()[0]) < 0.1
+
+
+@needs_dialog
+def test_planarity_column_flags_a_puckered_ring():
+    """A cyclohexane chair has no single ring plane, so "1 A above the plane"
+    is only approximate -- the user has to be told."""
+    mol = Chem.AddHs(Chem.MolFromSmiles("C1CCCCC1"))
+    AllChem.EmbedMolecule(mol, randomSeed=42)
+    AllChem.MMFFOptimizeMolecule(mol, maxIters=2000)
+    dlg = NicsPlacerDialog(_StubContext(mol=mol))
+    dlg.showEvent(MagicMock())
+    text = dlg._table.item(0, 4).text()
+    assert "⚠" in text
+    assert float(text.split()[0]) > 0.1
+
+
+@needs_dialog
+def test_error_ring_leaves_the_planarity_cell_blank(monkeypatch):
+    monkeypatch.setattr(
+        dialog_mod, "compute_nics_points", MagicMock(side_effect=ValueError("bad"))
+    )
+    dlg = NicsPlacerDialog(_StubContext(mol=_benzene_3d()))
+    dlg.showEvent(MagicMock())
+    assert dlg._table.item(0, 3).text() == "error"
+    assert dlg._table.item(0, 4).text() == ""
+
+
+@needs_dialog
+def test_reference_normal_failure_still_loads_the_rings(monkeypatch, caplog):
+    """Losing the shared "up" direction costs cross-ring face consistency, not
+    the whole ring table."""
+    monkeypatch.setattr(
+        dialog_mod,
+        "molecular_reference_normal",
+        MagicMock(side_effect=RuntimeError("no reference")),
+    )
+    dlg = NicsPlacerDialog(_StubContext(mol=_benzene_3d()))
+    with caplog.at_level(logging.WARNING):
+        dlg.showEvent(MagicMock())
+    assert "no reference" in caplog.text
+    assert dlg._table.rowCount() == 1
+    assert len(dlg._nics_points) == 3

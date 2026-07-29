@@ -1,6 +1,7 @@
 """
 Unit tests for nics_math.py — pure numpy, no Qt/RDKit required.
 """
+
 import math
 import sys
 import os
@@ -33,6 +34,7 @@ def _hexagon(z=0.0):
 # ring_centroid
 # ---------------------------------------------------------------------------
 
+
 class TestRingCentroid(unittest.TestCase):
     def test_origin(self):
         pts = np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0]], dtype=float)
@@ -50,6 +52,7 @@ class TestRingCentroid(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # ring_normal
 # ---------------------------------------------------------------------------
+
 
 class TestRingNormal(unittest.TestCase):
     def test_xy_plane(self):
@@ -74,6 +77,7 @@ class TestRingNormal(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # compute_nics_points
 # ---------------------------------------------------------------------------
+
 
 class TestComputeNicsPoints(unittest.TestCase):
     def test_nics0_at_centroid(self):
@@ -115,9 +119,7 @@ class TestComputeNicsPoints(unittest.TestCase):
     def test_nics1_above_z_positive_for_xy_ring(self):
         result = compute_nics_points(_hexagon())
         # Above should differ from below in one direction
-        self.assertFalse(
-            np.allclose(result["nics1_above"], result["nics1_below"])
-        )
+        self.assertFalse(np.allclose(result["nics1_above"], result["nics1_below"]))
 
     def test_keys_present(self):
         result = compute_nics_points(_hexagon())
@@ -130,14 +132,17 @@ class TestComputeNicsPoints(unittest.TestCase):
 # get_ring_positions
 # ---------------------------------------------------------------------------
 
+
 class TestGetRingPositions(unittest.TestCase):
     def _make_mol(self, positions):
         mol = MagicMock()
         conf = MagicMock()
+
         def get_pos(i):
             p = positions[i]
             # Return a list so [*pos] unpacking works (mirrors real RDKit Point3D iteration)
             return [p[0], p[1], p[2]]
+
         conf.GetAtomPosition.side_effect = get_pos
         mol.GetConformer.return_value = conf
         return mol
@@ -159,6 +164,7 @@ class TestGetRingPositions(unittest.TestCase):
 # get_rings
 # ---------------------------------------------------------------------------
 
+
 class TestGetRings(unittest.TestCase):
     def _make_mol(self, ring_atoms, aromatic_set, has_conformer=True):
         mol = MagicMock()
@@ -175,11 +181,14 @@ class TestGetRings(unittest.TestCase):
             a = MagicMock()
             a.GetIsAromatic.return_value = i in aromatic_set
             return a
+
         mol.GetAtomWithIdx.side_effect = get_atom
         return mol
 
     def test_no_conformer_returns_empty(self):
-        mol = self._make_mol([0, 1, 2, 3, 4, 5], {0, 1, 2, 3, 4, 5}, has_conformer=False)
+        mol = self._make_mol(
+            [0, 1, 2, 3, 4, 5], {0, 1, 2, 3, 4, 5}, has_conformer=False
+        )
         self.assertEqual(get_rings(mol), [])
 
     def test_aromatic_ring(self):

@@ -18,6 +18,7 @@ Ghost atom symbol options:
 
 The 'custom_symbol' atom property is shared with XYZ Editor and ORCA Input Generator Pro.
 """
+
 import logging
 
 import numpy as np
@@ -41,20 +42,23 @@ import pyvista as pv
 from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
 from .nics_math import (
     NICS1_HEIGHT,
+    PLANARITY_TOLERANCE,
     compute_nics_points,
     get_ring_positions,
     get_rings,
+    molecular_reference_normal,
 )
 
-_GHOST_SYMBOLS = ("Bq", "H:")   # all recognised ghost atom labels
-_PICK_DIST_SQ = 1.0             # Å² snap threshold
+_GHOST_SYMBOLS = ("Bq", "H:")  # all recognised ghost atom labels
+_PICK_DIST_SQ = 1.0  # Å² snap threshold
 _SPHERE_RADIUS = 0.25
-_GREEN_SPHERE_RADIUS = 0.50     # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
+_GREEN_SPHERE_RADIUS = 0.50  # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
 
 
 # ---------------------------------------------------------------------------
 # Qt event filter for non-drag click detection
 # ---------------------------------------------------------------------------
+
 
 class _ClickFilter(QObject):
     def __init__(self, callback, parent=None):
@@ -68,7 +72,10 @@ class _ClickFilter(QObject):
             if event.button() == Qt.MouseButton.LeftButton:
                 self._press_pos = event.position().toPoint()
         elif t == QEvent.Type.MouseButtonRelease:
-            if event.button() == Qt.MouseButton.LeftButton and self._press_pos is not None:
+            if (
+                event.button() == Qt.MouseButton.LeftButton
+                and self._press_pos is not None
+            ):
                 rel = event.position().toPoint()
                 dx = rel.x() - self._press_pos.x()
                 dy = rel.y() - self._press_pos.y()
@@ -82,22 +89,31 @@ class _ClickFilter(QObject):
 # RDKit molecule helpers
 # ---------------------------------------------------------------------------
 
-def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
-    """Return a new Mol with a ghost dummy atom appended at *position*."""
+
+def _add_bq_atoms(mol, positions, symbol: str = "Bq"):
+    """Return a new Mol with a ghost dummy atom appended at each of *positions*.
+
+    Batched deliberately: rebuilding the conformer once per atom makes placing
+    a grid quadratic in the number of probes, and a 3D volume can run to
+    thousands.
+    """
+    positions = list(positions)
     rw = Chem.RWMol(mol)
-    atom = Chem.Atom(0)
-    atom.SetProp("custom_symbol", symbol)
-    new_idx = rw.AddAtom(atom)
+    new_idx = []
+    for _p in positions:
+        atom = Chem.Atom(0)
+        atom.SetProp("custom_symbol", symbol)
+        new_idx.append(rw.AddAtom(atom))
 
     old_conf = mol.GetConformer()
     new_conf = Chem.Conformer(rw.GetNumAtoms())
     for i in range(mol.GetNumAtoms()):
         p = old_conf.GetAtomPosition(i)
         new_conf.SetAtomPosition(i, Point3D(p.x, p.y, p.z))
-    new_conf.SetAtomPosition(
-        new_idx,
-        Point3D(float(position[0]), float(position[1]), float(position[2])),
-    )
+    for idx, pos in zip(new_idx, positions):
+        new_conf.SetAtomPosition(
+            idx, Point3D(float(pos[0]), float(pos[1]), float(pos[2]))
+        )
     rw.RemoveAllConformers()
     rw.AddConformer(new_conf)
     try:
@@ -105,6 +121,11 @@ def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
     except Exception:
         rw.UpdatePropertyCache(strict=False)
     return rw.GetMol()
+
+
+def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
+    """Return a new Mol with a ghost dummy atom appended at *position*."""
+    return _add_bq_atoms(mol, [position], symbol=symbol)
 
 
 def _remove_all_bq(mol):
@@ -128,9 +149,9 @@ def _remove_all_bq(mol):
 # Main dialog
 # ---------------------------------------------------------------------------
 
-_STATE_UNSET   = "unset"    # yellow — not staged
-_STATE_STAGED  = "staged"   # red    — will be placed on Apply
-_STATE_PLACED  = "placed"   # green  — Bq atom exists in molecule
+_STATE_UNSET = "unset"  # yellow — not staged
+_STATE_STAGED = "staged"  # red    — will be placed on Apply
+_STATE_PLACED = "placed"  # green  — Bq atom exists in molecule
 
 
 class NicsPlacerDialog(QDialog):
@@ -148,14 +169,12 @@ class NicsPlacerDialog(QDialog):
         self._context = context
         self.setWindowTitle(f"NICS Placer  —  {PLUGIN_NAME} v{PLUGIN_VERSION}")
         self.resize(620, 450)
-        self.setWindowFlags(
-            self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint
-        )
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
 
         # List of dicts: {'ring':int, 'type':str, 'pos':np.ndarray, 'state':str}
         self._nics_points: list = []
-        self._error_rings: set = set()   # ring indices whose NICS calc failed
-        self._ghost_symbol: str = "Bq"   # "Bq" or "H:"
+        self._error_rings: set = set()  # ring indices whose NICS calc failed
+        self._ghost_symbol: str = "Bq"  # "Bq" or "H:"
         self._click_filter = None
         # Actor references for pick-detection
         self._actor_yellow = None
@@ -189,16 +208,20 @@ class NicsPlacerDialog(QDialog):
         sym_row.addWidget(QLabel("Ghost atom label:"))
         self._sym_combo = QComboBox()
         self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
-        self._sym_combo.addItem("H:  (ORCA native)",     "H:")
+        self._sym_combo.addItem("H:  (ORCA native)", "H:")
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         sym_row.addWidget(self._sym_combo)
         sym_row.addStretch()
         layout.addLayout(sym_row)
 
         self._table = QTableWidget()
-        self._table.setColumnCount(4)
-        self._table.setHorizontalHeaderLabels(["Ring", "Size", "Aromatic", "Status"])
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._table.setColumnCount(5)
+        self._table.setHorizontalHeaderLabels(
+            ["Ring", "Size", "Aromatic", "Status", "Planarity"]
+        )
+        self._table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         layout.addWidget(self._table)
@@ -256,23 +279,35 @@ class NicsPlacerDialog(QDialog):
 
         rings = get_rings(mol)
         self._table.setRowCount(len(rings))
+        # Shared "up" direction so nics1_above means the same molecular face
+        # for every ring — see nics_math.orient_normal.
+        try:
+            reference = molecular_reference_normal(mol)
+        except Exception as _e:
+            logging.warning("[dialog.py] reference normal: %s", _e)
+            reference = None
 
         for i, ring in enumerate(rings):
             try:
                 pts = get_ring_positions(mol, ring["atoms"])
-                nics = compute_nics_points(pts)
+                nics = compute_nics_points(pts, reference=reference)
             except Exception as _e:
                 logging.warning("[dialog.py] ring %d NICS calc: %s", i, _e)
                 self._error_rings.add(i)
-                for col, val in enumerate([
-                    str(i + 1), str(len(ring["atoms"])),
-                    "Yes" if ring["is_aromatic"] else "No", "error",
-                ]):
+                for col, val in enumerate(
+                    [
+                        str(i + 1),
+                        str(len(ring["atoms"])),
+                        "Yes" if ring["is_aromatic"] else "No",
+                        "error",
+                        "",
+                    ]
+                ):
                     self._table.setItem(i, col, QTableWidgetItem(val))
                 continue
 
             for ntype, pos in (
-                ("nics0",       nics["nics0"]),
+                ("nics0", nics["nics0"]),
                 ("nics1_above", nics["nics1_above"]),
                 ("nics1_below", nics["nics1_below"]),
             ):
@@ -280,13 +315,24 @@ class NicsPlacerDialog(QDialog):
                     {"ring": i, "type": ntype, "pos": pos, "state": _STATE_UNSET}
                 )
 
-            for col, val in enumerate([
-                str(i + 1),
-                str(len(ring["atoms"])),
-                "Yes" if ring["is_aromatic"] else "No",
-                "0/3",
-            ]):
+            planarity = nics.get("planarity", 0.0)
+            flat = planarity <= PLANARITY_TOLERANCE
+            item = QTableWidgetItem(f"{planarity:.3f} Å" + ("" if flat else "  ⚠"))
+            if not flat:
+                item.setToolTip(
+                    "Ring atoms deviate from their own best-fit plane, so "
+                    '"1 Å above the ring plane" is only approximate here.'
+                )
+            for col, val in enumerate(
+                [
+                    str(i + 1),
+                    str(len(ring["atoms"])),
+                    "Yes" if ring["is_aromatic"] else "No",
+                    "0/3",
+                ]
+            ):
                 self._table.setItem(i, col, QTableWidgetItem(val))
+            self._table.setItem(i, 4, item)
 
         self._sync_placed_status()
         self._render_spheres()
@@ -299,7 +345,10 @@ class NicsPlacerDialog(QDialog):
         conf = mol.GetConformer()
         bq_pos = []
         for atom in mol.GetAtoms():
-            if atom.HasProp("custom_symbol") and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS:
+            if (
+                atom.HasProp("custom_symbol")
+                and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS
+            ):
                 p = conf.GetAtomPosition(atom.GetIdx())
                 bq_pos.append(np.array([p.x, p.y, p.z]))
 
@@ -316,9 +365,9 @@ class NicsPlacerDialog(QDialog):
             if ring_idx in self._error_rings:
                 continue  # keep the "error" status set in _load_rings
             pts = [p for p in self._nics_points if p["ring"] == ring_idx]
-            n_placed  = sum(1 for p in pts if p["state"] == _STATE_PLACED)
-            n_staged  = sum(1 for p in pts if p["state"] == _STATE_STAGED)
-            n_total   = len(pts)
+            n_placed = sum(1 for p in pts if p["state"] == _STATE_PLACED)
+            n_staged = sum(1 for p in pts if p["state"] == _STATE_STAGED)
+            n_total = len(pts)
             if n_total == 0:
                 label = "—"
             elif n_placed == n_total:
@@ -342,32 +391,47 @@ class NicsPlacerDialog(QDialog):
             plotter.remove_actor("nics_red")
             plotter.remove_actor("nics_green")
             self._actor_yellow = None
-            self._actor_red    = None
-            self._actor_green  = None
+            self._actor_red = None
+            self._actor_green = None
 
             def _glyph(positions, radius=_SPHERE_RADIUS):
                 poly = pv.PolyData(np.array(positions, dtype=float))
                 poly["r"] = [radius] * len(positions)
                 return poly.glyph(geom=pv.Sphere(radius=1.0), scale="r", orient=False)
 
-            yellow_pts = [p["pos"] for p in self._nics_points if p["state"] == _STATE_UNSET]
-            red_pts    = [p["pos"] for p in self._nics_points if p["state"] == _STATE_STAGED]
-            green_pts  = [p["pos"] for p in self._nics_points if p["state"] == _STATE_PLACED]
+            yellow_pts = [
+                p["pos"] for p in self._nics_points if p["state"] == _STATE_UNSET
+            ]
+            red_pts = [
+                p["pos"] for p in self._nics_points if p["state"] == _STATE_STAGED
+            ]
+            green_pts = [
+                p["pos"] for p in self._nics_points if p["state"] == _STATE_PLACED
+            ]
 
             if yellow_pts:
                 self._actor_yellow = plotter.add_mesh(
-                    _glyph(yellow_pts), name="nics_yellow",
-                    color="gold", opacity=0.55, pickable=True,
+                    _glyph(yellow_pts),
+                    name="nics_yellow",
+                    color="gold",
+                    opacity=0.55,
+                    pickable=True,
                 )
             if red_pts:
                 self._actor_red = plotter.add_mesh(
-                    _glyph(red_pts), name="nics_red",
-                    color="red", opacity=0.60, pickable=True,
+                    _glyph(red_pts),
+                    name="nics_red",
+                    color="red",
+                    opacity=0.60,
+                    pickable=True,
                 )
             if green_pts:
                 self._actor_green = plotter.add_mesh(
-                    _glyph(green_pts, radius=_GREEN_SPHERE_RADIUS), name="nics_green",
-                    color="green", opacity=0.55, pickable=False,
+                    _glyph(green_pts, radius=_GREEN_SPHERE_RADIUS),
+                    name="nics_green",
+                    color="green",
+                    opacity=0.55,
+                    pickable=False,
                 )
 
             plotter.render()
@@ -413,6 +477,7 @@ class NicsPlacerDialog(QDialog):
     def _on_plotter_click(self, x, y, widget):
         try:
             import vtk
+
             plotter = self._context.plotter
             if plotter is None:
                 return
@@ -489,7 +554,11 @@ class NicsPlacerDialog(QDialog):
         changed = False
         for atom in mol.GetAtoms():
             if atom.GetAtomicNum() == 0:
-                old = atom.GetProp("custom_symbol") if atom.HasProp("custom_symbol") else None
+                old = (
+                    atom.GetProp("custom_symbol")
+                    if atom.HasProp("custom_symbol")
+                    else None
+                )
                 if old != new_symbol:
                     atom.SetProp("custom_symbol", new_symbol)
                     changed = True
@@ -504,7 +573,11 @@ class NicsPlacerDialog(QDialog):
     def _stage_rings(self, ring_indices: set, types: set):
         changed = False
         for pt in self._nics_points:
-            if pt["ring"] in ring_indices and pt["type"] in types and pt["state"] == _STATE_UNSET:
+            if (
+                pt["ring"] in ring_indices
+                and pt["type"] in types
+                and pt["state"] == _STATE_UNSET
+            ):
                 pt["state"] = _STATE_STAGED
                 changed = True
         if changed:
@@ -589,7 +662,7 @@ class NicsPlacerDialog(QDialog):
                 atom.HasProp("custom_symbol")
                 and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS
             ):
-                atom.SetProp("custom_symbol", "")   # mark for retagging
+                atom.SetProp("custom_symbol", "")  # mark for retagging
         self._retag_placed_atoms(self._ghost_symbol)
 
     def showEvent(self, event):
