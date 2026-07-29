@@ -104,7 +104,7 @@ class NicsGridDialog(QDialog):
         super().__init__(parent)
         self._context = context
         self.setWindowTitle(f"NICS Grid (2D, 3D)  —  {PLUGIN_NAME} v{PLUGIN_VERSION}")
-        self.resize(560, 600)
+        self.resize(600, 820)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
         self._rings: list = []
         self._grid_points: list = []
@@ -155,7 +155,11 @@ class NicsGridDialog(QDialog):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.setMaximumHeight(140)
+        # Enough for four or five rings without scrolling — fused systems
+        # routinely have that many, and the table is how you pick between
+        # them. It still grows if the dialog is resized.
+        self._table.setMinimumHeight(170)
+        self._table.setMaximumHeight(260)
         self._table.itemSelectionChanged.connect(self._on_params_changed)
         ring_layout.addWidget(self._table)
         layout.addWidget(self._ring_group)
@@ -358,10 +362,12 @@ class NicsGridDialog(QDialog):
 
     def _on_plane_changed(self, _index):
         # A ring-frame grid is anchored to one ring; lab planes are
-        # molecule-wide, so the table does not apply and is hidden rather than
-        # left visible-but-dead.
+        # molecule-wide, so the table does not apply. Greyed out rather than
+        # hidden: hiding it reflows everything below on every plane change,
+        # and the rings are still worth reading even when they are not
+        # steering the grid.
         ring_frame = self._current_plane() not in LAB_GRID_PLANES
-        self._ring_group.setVisible(ring_frame)
+        self._ring_group.setEnabled(ring_frame)
         self._table.setEnabled(ring_frame)
         self._hint_label.setText(
             "Follows the ring selected below; its centre is marked green in "

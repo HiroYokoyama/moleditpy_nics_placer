@@ -227,16 +227,27 @@ def test_axis_rows_are_named_for_the_current_plane():
 
 
 @needs_dialog
-def test_ring_table_is_hidden_for_lab_planes():
+def test_ring_table_is_disabled_for_lab_planes():
     """A lab-frame grid is molecule-wide, so picking a ring would be
-    misleading -- hide the box rather than leave it visible but dead."""
+    misleading. Greyed out rather than hidden, so the layout does not reflow
+    on every plane change."""
     dlg = _dialog()
     _select_plane(dlg, "xy")
-    dlg._ring_group.setVisible.assert_called_with(False)
+    dlg._ring_group.setEnabled.assert_called_with(False)
     assert not dlg._table.isEnabled()
     _select_plane(dlg, "parallel")
-    dlg._ring_group.setVisible.assert_called_with(True)
+    dlg._ring_group.setEnabled.assert_called_with(True)
     assert dlg._table.isEnabled()
+
+
+@needs_dialog
+def test_the_ring_table_is_never_hidden():
+    """Hiding reflows every control below it; the rings stay readable."""
+    dlg = _dialog()
+    _select_plane(dlg, "xy")
+    assert not any(
+        c.args and c.args[0] is False for c in dlg._ring_group.setVisible.call_args_list
+    )
 
 
 @needs_dialog
