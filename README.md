@@ -23,7 +23,7 @@ Two modes, one per menu entry:
 - Detects **all rings** (aromatic and non-aromatic) from the 3D structure
 - Computes NICS probe positions:
   - **NICS(0)** — ring centroid (in-plane)
-  - **NICS(1)±** — ±1 Å above and below the ring plane (SVD best-fit plane)
+  - **NICS(1)±** — ±1 Å above and below the ring plane (SVD best-fit plane). The **probe height** is adjustable, for NICS(0.5)/NICS(2) or to clear the atoms of a puckered ring.
 - **Consistent faces** — every ring's normal is oriented against a shared molecular reference, so `nics1_above` means the same side of the molecule for every ring in a fused system
 - **Planarity column** — the RMS deviation of each ring from its own best-fit plane, flagged with ⚠ above 0.1 Å where "1 Å above the ring plane" stops being well defined
 - Interactive **3-state sphere preview** in the 3D viewport:
@@ -69,7 +69,8 @@ Ring-frame grids follow the ring selected in the table — *u* is anchored to th
 - **Centre on molecular centre of mass** (default **on**) — the grid is centred on the mass-weighted centre of the molecule. Hydrogens count; ghost atoms have zero mass and so drop out on their own, which matters because otherwise every re-run would drag the centre toward the probes placed by the last one. Unchecking falls back to the ring's own centroid for a ring-frame grid (where a single-ring face map wants to sit) and to the heavy-atom bounding-box centre for a lab grid. The plane sets the orientation either way.
 
 - **Auto half-widths** — each axis is fitted to the molecule separately by projecting every heavy atom onto that axis, plus a ~2 Å margin, so the field is sampled where it has decayed rather than clipped at the last atom. This is exact for a tilted ring frame too: a lab-space bounding box would either clip a tilted grid or, padded by its diagonal, massively oversize it. Uncheck to set the half-widths by hand.
-- **Uniform spacing (cubic cells)** — derive the point counts from a step size instead of setting them directly. With independent half-widths, equal counts do *not* mean equal spacing, and it is the spacing that decides whether the sampled field is smooth enough to contour.
+- **Uniform spacing (cubic cells)** — derive the point counts from a step size (default 1 Å) instead of setting them directly. Each half-width is first grown to a whole number of steps, so the step comes out *exactly* the requested value on every axis while the counts still follow the molecular shape. Rounding only the count would not do this: half-widths of 4.4 / 4.3 / 4.2 at a 1 Å request all land on 10 points — counts identical — yet step 0.978 / 0.956 / 0.933.
+- **Auto-fit margin**, **confirmation threshold**, and **preview sphere size / decimation limit** are all adjustable.
 - **Offset** applies on every plane, lab planes included, and moves the whole grid along that plane's own normal. It defaults to **0** — the ring plane itself.
 - Live **probe count and per-axis spacing** readout, with the axes named for the current plane (X/Y/Z, or u/v/n in a ring frame); grids above 400 probes are flagged and confirmed before placement, since NMR cost grows with the number of ghost centres
 - Ghost atoms are placed in one batch, and the preview is decimated above 2000 points so a large box does not stall the viewport
@@ -183,7 +184,7 @@ Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp
 
 ## Version
 
-2.1.0 — HiroYokoyama
+2.2.0 — HiroYokoyama
 
 ## License & Disclaimer
 

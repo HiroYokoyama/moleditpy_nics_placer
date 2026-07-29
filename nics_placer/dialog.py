@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -211,6 +212,23 @@ class NicsPlacerDialog(QDialog):
         self._sym_combo.addItem("H:  (ORCA native)", "H:")
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         sym_row.addWidget(self._sym_combo)
+
+        # NICS(1) is the convention, but NICS(0.5)/NICS(2) and larger heights
+        # are all in use, and a puckered ring sometimes needs more clearance
+        # to get the probe clear of the atoms.
+        sym_row.addWidget(QLabel("   Probe height:"))
+        self._height_spin = QDoubleSpinBox()
+        self._height_spin.setRange(0.0, 20.0)
+        self._height_spin.setSingleStep(0.5)
+        self._height_spin.setDecimals(2)
+        self._height_spin.setValue(NICS1_HEIGHT)
+        self._height_spin.setSuffix(" A")
+        self._height_spin.setToolTip(
+            "Distance above and below the ring plane for the NICS(1) probes. "
+            "1 A is the usual convention."
+        )
+        self._height_spin.valueChanged.connect(self._on_height_changed)
+        sym_row.addWidget(self._height_spin)
         sym_row.addStretch()
         layout.addLayout(sym_row)
 
@@ -290,7 +308,9 @@ class NicsPlacerDialog(QDialog):
         for i, ring in enumerate(rings):
             try:
                 pts = get_ring_positions(mol, ring["atoms"])
-                nics = compute_nics_points(pts, reference=reference)
+                nics = compute_nics_points(
+                    pts, height=self._height_spin.value(), reference=reference
+                )
             except Exception as _e:
                 logging.warning("[dialog.py] ring %d NICS calc: %s", i, _e)
                 self._error_rings.add(i)
@@ -539,6 +559,15 @@ class NicsPlacerDialog(QDialog):
             self._sym_combo.setCurrentIndex(idx)
             self._sym_combo.blockSignals(False)
         self._ghost_symbol = sym
+
+    def _on_height_changed(self, _value):
+        """Recompute the probes at the new height.
+
+        Points already committed as ghost atoms are left where they are — the
+        molecule is the record of what was placed, and silently moving atoms
+        under the user would be worse than a stale green sphere.
+        """
+        self._load_rings()
 
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()

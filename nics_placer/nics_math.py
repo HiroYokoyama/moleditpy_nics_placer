@@ -302,6 +302,14 @@ def counts_for_spacing(extents, spacing: float) -> tuple:
     the counts is not the same as matching the step, and it is the step that
     decides whether the sampled field is smooth. A zero-width axis collapses to
     a single point rather than to a division by zero.
+
+    NOTE this alone does not give *equal* steps across axes — rounding the
+    count up while holding the half-width fixed shortens the step by whatever
+    the rounding absorbed, and by a different amount on each axis. Half-widths
+    of 4.4 / 4.3 / 4.2 at a 1.0 Å request all round to 10 points yet step
+    0.978 / 0.956 / 0.933. Pair this with `snap_extents_to_spacing`, which
+    grows each half-width to a whole number of steps, to make the step exactly
+    *spacing* everywhere.
     """
     if spacing <= 0:
         raise ValueError("spacing must be positive")
@@ -309,6 +317,27 @@ def counts_for_spacing(extents, spacing: float) -> tuple:
     for e in np.atleast_1d(np.asarray(extents, dtype=float)):
         counts.append(1 if e <= 0 else int(math.ceil(2.0 * e / spacing)) + 1)
     return tuple(counts)
+
+
+def snap_extents_to_spacing(extents, spacing: float) -> tuple:
+    """Grow each half-width to the next whole multiple of *spacing*.
+
+    This is what makes "uniform spacing" actually uniform: once the span is an
+    exact number of steps, the count follows and every axis lands on the same
+    step. The half-width only ever grows, so the molecule stays covered.
+
+    The tolerance keeps a half-width that is already an exact multiple from
+    being pushed a whole step wider by floating-point noise.
+    """
+    if spacing <= 0:
+        raise ValueError("spacing must be positive")
+    snapped = []
+    for e in np.atleast_1d(np.asarray(extents, dtype=float)):
+        if e <= 0:
+            snapped.append(0.0)
+        else:
+            snapped.append(math.ceil(e / spacing - 1e-9) * spacing)
+    return tuple(snapped)
 
 
 def ring_frame(positions: np.ndarray, reference: np.ndarray = None) -> tuple:

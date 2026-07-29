@@ -828,3 +828,64 @@ class TestCenterOfMassDegenerate(unittest.TestCase):
 
         mol = self._Mol([[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]], [3.0, 1.0])
         np.testing.assert_allclose(center_of_mass(mol), [1.0, 0.0, 0.0])
+
+
+# ---------------------------------------------------------------------------
+# Uniform spacing: equal steps, not merely equal counts
+# ---------------------------------------------------------------------------
+
+
+class TestSnapExtentsToSpacing(unittest.TestCase):
+    def test_snapping_makes_the_step_identical_on_every_axis(self):
+        """The bug this fixes: half-widths of 4.4 / 4.3 / 4.2 all rounded to 10
+        points, so the counts matched but the steps were 0.978 / 0.956 / 0.933.
+        Growing each half-width to a whole number of steps first makes the step
+        exactly what was asked for."""
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        for raw in ([4.4, 4.3, 4.2], [5.5, 4.2, 3.1], [7.31, 2.02, 6.99]):
+            for spacing in (0.25, 0.5, 1.0):
+                with self.subTest(extents=raw, spacing=spacing):
+                    snapped = snap_extents_to_spacing(raw, spacing)
+                    counts = counts_for_spacing(snapped, spacing)
+                    steps = [
+                        (2.0 * e) / (n - 1) for e, n in zip(snapped, counts) if n > 1
+                    ]
+                    for step in steps:
+                        self.assertAlmostEqual(step, spacing, places=9)
+
+    def test_snapping_only_ever_grows_the_window(self):
+        """The molecule must stay covered — a half-width may not shrink."""
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        raw = [4.4, 4.3, 4.2]
+        for got, want in zip(snap_extents_to_spacing(raw, 1.0), raw):
+            self.assertGreaterEqual(got, want)
+
+    def test_counts_still_follow_the_molecular_shape(self):
+        """Equal spacing must not mean equal counts: a longer axis gets more
+        points, which is the whole point of per-axis sizing."""
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        snapped = snap_extents_to_spacing([6.0, 4.0, 2.0], 1.0)
+        self.assertEqual(counts_for_spacing(snapped, 1.0), (13, 9, 5))
+
+    def test_an_exact_multiple_is_left_alone(self):
+        """Floating-point noise must not push an already-exact span a whole
+        step wider."""
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        np.testing.assert_allclose(snap_extents_to_spacing([3.0, 1.5], 0.5), [3.0, 1.5])
+
+    def test_a_zero_width_axis_stays_zero(self):
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        self.assertEqual(snap_extents_to_spacing([0.0, 1.2], 0.5), (0.0, 1.5))
+
+    def test_rejects_a_non_positive_spacing(self):
+        from nics_placer.nics_math import snap_extents_to_spacing
+
+        for bad in (0.0, -1.0):
+            with self.subTest(spacing=bad):
+                with self.assertRaises(ValueError):
+                    snap_extents_to_spacing([1.0], bad)

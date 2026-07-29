@@ -62,6 +62,7 @@ from .nics_math import (
     get_rings,
     molecular_reference_normal,
     molecule_bounds,
+    snap_extents_to_spacing,
 )
 
 #: Above this many probes the dialog asks before committing. An NMR job scales
@@ -78,7 +79,10 @@ _PREVIEW_MAX = 2000
 #: two cannot drift apart.
 _DEFAULT_POINTS = 9
 _DEFAULT_EXTENT = 3.0
-_DEFAULT_SPACING = 0.5
+_DEFAULT_SPACING = 1.0
+_DEFAULT_MARGIN = 2.0
+_DEFAULT_CONFIRM_ABOVE = _CONFIRM_ABOVE
+_DEFAULT_SPHERE_RADIUS = _GRID_SPHERE_RADIUS
 
 
 class NicsGridDialog(QDialog):
@@ -150,10 +154,26 @@ class NicsGridDialog(QDialog):
         self._use_com.toggled.connect(self._on_params_changed)
         form.addRow("Centre:", self._use_com)
 
+        extent_row = QHBoxLayout()
         self._auto_extent = QCheckBox("Auto — fit each axis to the molecule")
         self._auto_extent.setChecked(True)
         self._auto_extent.toggled.connect(self._on_auto_toggled)
-        form.addRow("Half-widths:", self._auto_extent)
+        extent_row.addWidget(self._auto_extent)
+        extent_row.addWidget(QLabel("margin"))
+        self._margin_spin = QDoubleSpinBox()
+        self._margin_spin.setRange(0.0, 20.0)
+        self._margin_spin.setSingleStep(0.5)
+        self._margin_spin.setDecimals(2)
+        self._margin_spin.setValue(_DEFAULT_MARGIN)
+        self._margin_spin.setSuffix(" A")
+        self._margin_spin.setToolTip(
+            "Padding added beyond the outermost atom on each axis, so the "
+            "ring-current field is sampled where it has decayed rather than "
+            "clipped at the last atom. ~2 A is about one van der Waals radius."
+        )
+        self._margin_spin.valueChanged.connect(self._on_params_changed)
+        extent_row.addWidget(self._margin_spin)
+        form.addRow("Half-widths:", extent_row)
 
         # Uniform spacing derives the counts from a step size instead. With
         # independent half-widths, equal counts do NOT mean equal spacing, and
@@ -213,6 +233,39 @@ class NicsGridDialog(QDialog):
         self._sym_combo.addItem("H:  (ORCA native)", "H:")
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         form.addRow("Ghost atom label:", self._sym_combo)
+
+        self._confirm_spin = QSpinBox()
+        self._confirm_spin.setRange(0, 100000)
+        self._confirm_spin.setValue(_DEFAULT_CONFIRM_ABOVE)
+        self._confirm_spin.setToolTip(
+            "Ask for confirmation before placing more than this many probes. "
+            "NMR cost grows with the number of ghost centres. Set to 0 to be "
+            "asked every time."
+        )
+        self._confirm_spin.valueChanged.connect(self._on_params_changed)
+        form.addRow("Confirm above:", self._confirm_spin)
+
+        preview_row = QHBoxLayout()
+        self._radius_spin = QDoubleSpinBox()
+        self._radius_spin.setRange(0.01, 2.0)
+        self._radius_spin.setSingleStep(0.02)
+        self._radius_spin.setDecimals(2)
+        self._radius_spin.setValue(_DEFAULT_SPHERE_RADIUS)
+        self._radius_spin.setSuffix(" A")
+        self._radius_spin.setToolTip("Radius of the preview spheres. Display only.")
+        self._radius_spin.valueChanged.connect(self._on_params_changed)
+        preview_row.addWidget(self._radius_spin)
+        preview_row.addWidget(QLabel("max shown"))
+        self._preview_max_spin = QSpinBox()
+        self._preview_max_spin.setRange(100, 100000)
+        self._preview_max_spin.setValue(_PREVIEW_MAX)
+        self._preview_max_spin.setToolTip(
+            "Preview spheres are thinned above this count so a large box does "
+            "not stall the viewport. Placement always uses every probe."
+        )
+        self._preview_max_spin.valueChanged.connect(self._on_params_changed)
+        preview_row.addWidget(self._preview_max_spin)
+        form.addRow("Preview sphere:", preview_row)
 
         layout.addLayout(form)
 
@@ -351,6 +404,10 @@ class NicsGridDialog(QDialog):
             self._spacing_spin.setValue(_DEFAULT_SPACING)
             self._spacing_spin.setEnabled(False)
             self._offset_spin.setValue(0.0)
+            self._margin_spin.setValue(_DEFAULT_MARGIN)
+            self._confirm_spin.setValue(_DEFAULT_CONFIRM_ABOVE)
+            self._radius_spin.setValue(_DEFAULT_SPHERE_RADIUS)
+            self._preview_max_spin.setValue(_PREVIEW_MAX)
             for row in self._axis_rows:
                 row["n"].setValue(_DEFAULT_POINTS)
                 row["n"].setEnabled(True)
@@ -407,14 +464,26 @@ class NicsGridDialog(QDialog):
                         positions=positions,
                         reference=reference,
                         center=center,
+                        margin=self._margin_spin.value(),
                     )
                 )
-                for row, value in zip(self._axis_rows, extents):
-                    row["e"].blockSignals(True)
-                    row["e"].setValue(value)
-                    row["e"].blockSignals(False)
             else:
                 extents = [row["e"].value() for row in self._axis_rows]
+
+            if self._uniform_spacing.isChecked():
+                # Grow each half-width to a whole number of steps FIRST.
+                # Rounding only the count leaves each axis with a different
+                # actual step -- half-widths of 4.4/4.3/4.2 at a 1.0 A request
+                # all give 10 points but step 0.978/0.956/0.933.
+                extents = list(
+                    snap_extents_to_spacing(extents, self._spacing_spin.value())
+                )
+
+            for row, value in zip(self._axis_rows, extents):
+                row["e"].blockSignals(True)
+                row["e"].setValue(value)
+                row["e"].blockSignals(False)
+            extents = [row["e"].value() for row in self._axis_rows]
 
             if self._uniform_spacing.isChecked():
                 counts = list(counts_for_spacing(extents, self._spacing_spin.value()))
@@ -455,7 +524,7 @@ class NicsGridDialog(QDialog):
         warn = (
             "  <b style='color:#b26b00'>&mdash; large; NMR cost grows with "
             "ghost centres.</b>"
-            if total > _CONFIRM_ABOVE
+            if total > self._confirm_spin.value()
             else ""
         )
         names = self._axis_labels()
@@ -519,11 +588,12 @@ class NicsGridDialog(QDialog):
                 # stalls the viewer on every spinbox tick. The preview only has
                 # to show where the box sits, so thin it out — placement still
                 # uses every point.
-                if len(pts) > _PREVIEW_MAX:
-                    stride = int(np.ceil(len(pts) / _PREVIEW_MAX))
+                preview_max = self._preview_max_spin.value()
+                if len(pts) > preview_max:
+                    stride = int(np.ceil(len(pts) / preview_max))
                     pts = pts[::stride]
                 poly = pv.PolyData(pts)
-                poly["r"] = [_GRID_SPHERE_RADIUS] * len(pts)
+                poly["r"] = [self._radius_spin.value()] * len(pts)
                 mesh = poly.glyph(geom=pv.Sphere(radius=1.0), scale="r", orient=False)
                 plotter.add_mesh(
                     mesh,
@@ -556,7 +626,7 @@ class NicsGridDialog(QDialog):
         if not mol:
             return
         total = len(self._grid_points)
-        if total > _CONFIRM_ABOVE:
+        if total > self._confirm_spin.value():
             reply = QMessageBox.question(
                 self,
                 "Large grid",

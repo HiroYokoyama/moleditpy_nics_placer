@@ -105,10 +105,24 @@ def _select_mode(dlg, mode):
 
 @pytest.fixture(autouse=True)
 def _reset_msgbox():
-    if _AVAILABLE:
-        grid_mod.QMessageBox._calls = []
-        grid_mod.QMessageBox._answer = grid_mod.QMessageBox.StandardButton.No
-    yield
+    """Reset the process-wide state the dialog touches.
+
+    ``_plugin_settings`` is a module-level dict deliberately shared across
+    documents, so a test that changes the ghost label leaks it into every test
+    that runs afterwards. Snapshot and restore it rather than relying on test
+    order.
+    """
+    if not _AVAILABLE:
+        yield
+        return
+    grid_mod.QMessageBox._calls = []
+    grid_mod.QMessageBox._answer = grid_mod.QMessageBox.StandardButton.No
+    saved = dict(grid_mod._plugin_settings)
+    try:
+        yield
+    finally:
+        grid_mod._plugin_settings.clear()
+        grid_mod._plugin_settings.update(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -632,8 +646,62 @@ def test_uniform_spacing_matches_the_step_on_every_axis():
     dlg._on_uniform_toggled(True)
     n1, n2, n3 = _counts(dlg)
     assert (n1, n2, n3) == (13, 9, 5)
-    for count, extent in zip((n1, n2, n3), (6.0, 4.0, 2.0)):
+    for count, extent in zip((n1, n2, n3), _extents(dlg)):
         assert (2.0 * extent) / (count - 1) == pytest.approx(1.0)
+
+
+@needs_dialog
+def test_uniform_spacing_gives_equal_steps_for_awkward_half_widths():
+    """The reported bug: 4.4 / 4.3 / 4.2 all landed on the same count, so the
+    counts looked uniform while the actual steps were 0.978 / 0.956 / 0.933.
+    The half-widths must be grown to whole steps first."""
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_extents(dlg, 4.4, 4.3, 4.2)
+    dlg._uniform_spacing.setChecked(True)
+    dlg._spacing_spin.setValue(1.0)
+    dlg._on_uniform_toggled(True)
+    steps = [(2.0 * e) / (n - 1) for e, n in zip(_extents(dlg), _counts(dlg)) if n > 1]
+    assert steps == pytest.approx([1.0, 1.0, 1.0])
+
+
+@needs_dialog
+def test_uniform_spacing_keeps_counts_tied_to_shape():
+    """Equal spacing must not collapse into equal counts -- a longer axis still
+    gets more points."""
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _set_extents(dlg, 8.0, 4.0, 1.0)
+    dlg._uniform_spacing.setChecked(True)
+    dlg._spacing_spin.setValue(0.5)
+    dlg._on_uniform_toggled(True)
+    n1, n2, n3 = _counts(dlg)
+    assert n1 > n2 > n3
+
+
+@needs_dialog
+def test_uniform_spacing_never_shrinks_the_window():
+    dlg = _dialog()
+    _set_extents(dlg, 4.4, 4.3)
+    dlg._uniform_spacing.setChecked(True)
+    dlg._spacing_spin.setValue(1.0)
+    dlg._on_uniform_toggled(True)
+    e1, e2, _e3 = _extents(dlg)
+    assert e1 >= 4.4 and e2 >= 4.3
+
+
+@needs_dialog
+def test_uniform_spacing_with_auto_extents_still_equalises_the_step():
+    """Auto-fitted half-widths are arbitrary reals, so this is where unequal
+    steps actually bit."""
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_mode(dlg, "3d")
+    _select_plane(dlg, "xy")
+    dlg._uniform_spacing.setChecked(True)
+    dlg._spacing_spin.setValue(0.5)
+    dlg._on_uniform_toggled(True)
+    steps = [(2.0 * e) / (n - 1) for e, n in zip(_extents(dlg), _counts(dlg)) if n > 1]
+    assert steps == pytest.approx([0.5] * len(steps))
 
 
 @needs_dialog
@@ -778,3 +846,107 @@ def test_reset_leaves_a_usable_grid():
     assert len(dlg._grid_points) > 0
     dlg._place_grid()
     assert dlg._context.push_undo_checkpoint.called
+
+
+# ---------------------------------------------------------------------------
+# The remaining settings are all adjustable
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_margin_widens_the_auto_fitted_half_widths():
+    """Only the two in-plane axes are compared: naphthalene is flat, so its
+    third axis is pinned by the 2 A floor `axis_extents` applies and cannot
+    track the margin."""
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "xy")
+    dlg._margin_spin.setValue(1.0)
+    dlg._on_params_changed()
+    tight = _extents(dlg)
+    dlg._margin_spin.setValue(6.0)
+    dlg._on_params_changed()
+    wide = _extents(dlg)
+    for w, t in zip(wide[:2], tight[:2]):
+        assert w == pytest.approx(t + 5.0)
+    assert all(w >= t for w, t in zip(wide, tight))
+
+
+@needs_dialog
+def test_confirm_threshold_is_adjustable():
+    dlg = _dialog()
+    dlg._confirm_spin.setValue(1000000)
+    _set_counts(dlg, 31, 31)
+    dlg._place_grid()
+    assert grid_mod.QMessageBox._calls == [], "raised threshold should not prompt"
+
+
+@needs_dialog
+def test_lowering_the_confirm_threshold_prompts_for_a_small_grid():
+    dlg = _dialog()
+    dlg._confirm_spin.setValue(1)
+    _set_counts(dlg, 3, 3)
+    dlg._place_grid()
+    assert len(grid_mod.QMessageBox._calls) == 1
+
+
+@needs_dialog
+def test_preview_sphere_radius_is_adjustable():
+    captured = {}
+
+    class _Poly:
+        def __init__(self, pts):
+            pass
+
+        def __setitem__(self, k, v):
+            captured[k] = v
+
+        def glyph(self, **kw):
+            return MagicMock()
+
+    dlg = _dialog()
+    grid_mod.pv.PolyData, real = _Poly, grid_mod.pv.PolyData
+    try:
+        dlg._radius_spin.setValue(0.4)
+        dlg._on_params_changed()
+    finally:
+        grid_mod.pv.PolyData = real
+    assert captured["r"][0] == pytest.approx(0.4)
+
+
+@needs_dialog
+def test_preview_decimation_threshold_is_adjustable():
+    captured = {}
+
+    class _Poly:
+        def __init__(self, pts):
+            captured["n"] = len(pts)
+
+        def __setitem__(self, k, v):
+            pass
+
+        def glyph(self, **kw):
+            return MagicMock()
+
+    dlg = _dialog()
+    grid_mod.pv.PolyData, real = _Poly, grid_mod.pv.PolyData
+    try:
+        dlg._preview_max_spin.setValue(100)
+        _set_counts(dlg, 31, 31)
+    finally:
+        grid_mod.pv.PolyData = real
+    assert len(dlg._grid_points) == 961
+    assert captured["n"] <= 100
+
+
+@needs_dialog
+def test_reset_restores_the_added_settings_too():
+    dlg = _dialog()
+    dlg._margin_spin.setValue(9.0)
+    dlg._confirm_spin.setValue(7)
+    dlg._radius_spin.setValue(0.9)
+    dlg._preview_max_spin.setValue(150)
+    dlg._reset_settings()
+    assert dlg._margin_spin.value() == pytest.approx(grid_mod._DEFAULT_MARGIN)
+    assert dlg._confirm_spin.value() == grid_mod._DEFAULT_CONFIRM_ABOVE
+    assert dlg._radius_spin.value() == pytest.approx(grid_mod._DEFAULT_SPHERE_RADIUS)
+    assert dlg._preview_max_spin.value() == grid_mod._PREVIEW_MAX

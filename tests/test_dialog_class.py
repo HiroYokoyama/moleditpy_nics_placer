@@ -870,3 +870,43 @@ def test_reference_normal_failure_still_loads_the_rings(monkeypatch, caplog):
     assert "no reference" in caplog.text
     assert dlg._table.rowCount() == 1
     assert len(dlg._nics_points) == 3
+
+
+# ---------------------------------------------------------------------------
+# Probe height
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_probe_height_defaults_to_one_angstrom():
+    dlg = NicsPlacerDialog(_StubContext(mol=_benzene_3d()))
+    dlg.showEvent(MagicMock())
+    assert dlg._height_spin.value() == pytest.approx(1.0)
+    above = next(p for p in dlg._nics_points if p["type"] == "nics1_above")
+    centre = next(p for p in dlg._nics_points if p["type"] == "nics0")
+    assert float(np.linalg.norm(above["pos"] - centre["pos"])) == pytest.approx(1.0)
+
+
+@needs_dialog
+def test_changing_the_probe_height_moves_the_probes():
+    """NICS(1) is the convention, but NICS(0.5) and NICS(2) are both in use."""
+    dlg = NicsPlacerDialog(_StubContext(mol=_benzene_3d()))
+    dlg.showEvent(MagicMock())
+    dlg._height_spin.setValue(2.0)
+    dlg._on_height_changed(2.0)
+    above = next(p for p in dlg._nics_points if p["type"] == "nics1_above")
+    below = next(p for p in dlg._nics_points if p["type"] == "nics1_below")
+    centre = next(p for p in dlg._nics_points if p["type"] == "nics0")
+    assert float(np.linalg.norm(above["pos"] - centre["pos"])) == pytest.approx(2.0)
+    assert float(np.linalg.norm(below["pos"] - centre["pos"])) == pytest.approx(2.0)
+
+
+@needs_dialog
+def test_a_zero_probe_height_collapses_onto_nics0():
+    dlg = NicsPlacerDialog(_StubContext(mol=_benzene_3d()))
+    dlg.showEvent(MagicMock())
+    dlg._height_spin.setValue(0.0)
+    dlg._on_height_changed(0.0)
+    positions = [p["pos"] for p in dlg._nics_points]
+    for pos in positions[1:]:
+        np.testing.assert_allclose(pos, positions[0], atol=1e-9)
