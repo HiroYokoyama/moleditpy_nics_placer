@@ -5,12 +5,10 @@ Relies on the rich PyQt6/pyvista stubs installed by tests/conftest.py so
 that `from .dialog import NicsPlacerDialog` succeeds headlessly.
 """
 
-import builtins
-import importlib
 import json
 import os
 import sys
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock
 
 import pytest
 

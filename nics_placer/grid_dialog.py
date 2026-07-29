@@ -360,7 +360,13 @@ class NicsGridDialog(QDialog):
             row["e"].setVisible(visible)
             row["label"].setText(f"Axis {names[slot]}:")
 
-    def _on_plane_changed(self, _index):
+    def _apply_plane_state(self):
+        """Widget enabling that follows from the plane. Does not rebuild.
+
+        Split out from the signal handler so `_reset_settings`, which changes
+        the plane with signals blocked, can reapply it without triggering a
+        second grid build.
+        """
         # A ring-frame grid is anchored to one ring; lab planes are
         # molecule-wide, so the table does not apply. Greyed out rather than
         # hidden: hiding it reflows everything below on every plane change,
@@ -376,12 +382,15 @@ class NicsGridDialog(QDialog):
             else "Fixed laboratory axes across the whole molecule; no anchor "
             "ring applies."
         )
+
+    def _on_plane_changed(self, _index):
+        self._apply_plane_state()
         self._refresh_axis_rows()
         self._on_params_changed()
 
-    def _on_mode_changed(self, _index):
+    def _apply_mode_state(self):
+        """Widget enabling that follows from the mode. Does not rebuild."""
         is3d = self._is_3d()
-        self._refresh_axis_rows()
         # In 2D the offset picks which slice you are sampling -- 1 A is the
         # NICS(1) face map. In 3D the box already spans the normal direction
         # symmetrically, so an offset only slides it off the centre you just
@@ -398,6 +407,10 @@ class NicsGridDialog(QDialog):
         self._plane_combo.setToolTip(
             "In 3D mode the plane only fixes the box orientation." if is3d else ""
         )
+
+    def _on_mode_changed(self, _index):
+        self._apply_mode_state()
+        self._refresh_axis_rows()
         self._on_params_changed()
 
     def _on_auto_toggled(self, checked):
@@ -454,8 +467,14 @@ class NicsGridDialog(QDialog):
         finally:
             for w in widgets:
                 w.blockSignals(False)
+        # Reapply every state that normally rides on a signal. The plane was
+        # changed with signals blocked, so without this a reset from a lab
+        # plane leaves the grid ring-anchored again while the ring table stays
+        # greyed out and unpickable.
+        self._apply_mode_state()
+        self._apply_plane_state()
         self._refresh_axis_rows()
-        self._on_mode_changed(0)
+        self._on_params_changed()
 
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()

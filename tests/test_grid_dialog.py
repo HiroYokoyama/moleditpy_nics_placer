@@ -1120,3 +1120,48 @@ def test_offset_comes_back_when_returning_to_2d():
     dlg._offset_spin.setValue(1.0)
     dlg._on_params_changed()
     assert max(abs(float(p["pos"][2])) for p in dlg._grid_points) > 0
+
+
+@needs_dialog
+def test_reset_from_a_lab_plane_re_enables_the_ring_table():
+    """Reset changes the plane with signals blocked, so the state that
+    normally rides on the signal has to be reapplied by hand -- otherwise the
+    grid goes back to being ring-anchored while the ring stays unpickable."""
+    dlg = _dialog()
+    _select_plane(dlg, "xy")
+    assert not dlg._table.isEnabled()
+    dlg._reset_settings()
+    assert dlg._current_plane() == "parallel"
+    assert dlg._table.isEnabled()
+    dlg._ring_group.setEnabled.assert_called_with(True)
+
+
+@needs_dialog
+def test_reset_from_a_lab_plane_restores_the_hint():
+    dlg = _dialog()
+    _select_plane(dlg, "xy")
+    dlg._reset_settings()
+    assert "ring selected below" in dlg._hint_label.setText.call_args[0][0]
+
+
+@needs_dialog
+def test_reset_from_3d_re_enables_the_offset():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    assert not dlg._offset_spin.isEnabled()
+    dlg._reset_settings()
+    assert dlg._offset_spin.isEnabled()
+
+
+@needs_dialog
+def test_reset_from_a_lab_plane_still_rebuilds_only_once():
+    dlg = _dialog()
+    _select_plane(dlg, "xy")
+    dlg._context.plotter.add_mesh.reset_mock()
+    dlg._reset_settings()
+    grid_draws = [
+        c
+        for c in dlg._context.plotter.add_mesh.call_args_list
+        if c.kwargs.get("name") == "nics_grid"
+    ]
+    assert len(grid_draws) == 1

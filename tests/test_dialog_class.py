@@ -5,7 +5,6 @@ rich PyQt6 / pyvista stubs installed by tests/conftest.py.
 
 import sys
 import os
-import types
 import logging
 from unittest.mock import MagicMock
 

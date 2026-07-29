@@ -52,7 +52,7 @@ Lays down a whole lattice of probes so the shielding can be plotted as a surface
 
 ![NICS Grid dialog](img/main-grid.png)
 
-*A 3D box over a fused arene. Uniform spacing at 1.5 Å gives 9 × 11 × 7 points over ±6.00 / ±7.50 / ±4.50 Å — the counts follow the molecule's shape while the step stays identical on every axis. The green sphere marks the ring the frame is anchored to.*
+*A 3D box over chrysene. Uniform spacing at 1.5 Å gives 9 × 9 × 5 points over ±6.00 / ±6.00 / ±3.00 Å — the counts follow the molecule's shape while the step stays identical on every axis. The green sphere marks the ring the frame is anchored to, and the offset is greyed out because a 3D box is already centred.*
 
 - **2D** — a plane of probes
 - **3D** — a box of probes

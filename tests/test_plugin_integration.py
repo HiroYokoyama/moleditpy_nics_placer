@@ -6,11 +6,10 @@ Integration tests for nics_placer/__init__.py — verifies plugin contract
 import sys
 import os
 import unittest
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), "..")))
 
-import nics_placer as _pkg
 from nics_placer import initialize, PLUGIN_NAME, PLUGIN_VERSION
 
 
