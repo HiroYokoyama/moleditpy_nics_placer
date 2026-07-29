@@ -62,6 +62,7 @@ from .nics_math import (
     get_rings,
     molecular_reference_normal,
     molecule_bounds,
+    ring_centroid,
     snap_extents_to_spacing,
 )
 
@@ -71,6 +72,11 @@ from .nics_math import (
 _CONFIRM_ABOVE = 400
 
 _GRID_SPHERE_RADIUS = 0.12  # smaller than the single-probe spheres: grids are dense
+
+#: Marks which ring a ring-frame grid is anchored to. Bigger than a probe
+#: sphere so it reads as a landmark rather than as one more grid point.
+_RING_MARKER_ACTOR = "nics_grid_ring_center"
+_RING_MARKER_RADIUS = 0.22
 
 #: Preview spheres are decimated above this count — see _render_spheres.
 _PREVIEW_MAX = 2000
@@ -602,15 +608,42 @@ class NicsGridDialog(QDialog):
                     opacity=0.5,
                     pickable=False,
                 )
+            self._render_ring_marker(plotter)
             plotter.render()
         except Exception as _e:
             logging.warning("[grid_dialog.py] _render_spheres: %s", _e)
+
+    def _render_ring_marker(self, plotter):
+        """Green sphere on the centroid of the ring the grid is anchored to.
+
+        Only for ring-frame planes: a lab grid is molecule-wide and the ring
+        table is disabled there, so a highlight would point at a ring that has
+        no bearing on the grid.
+        """
+        plotter.remove_actor(_RING_MARKER_ACTOR)
+        if self._current_plane() in LAB_GRID_PLANES or not self._rings:
+            return
+        mol = self._context.current_molecule
+        if not mol or not mol.GetNumConformers():
+            return
+        ring = self._rings[min(self._selected_ring(), len(self._rings) - 1)]
+        centroid = ring_centroid(get_ring_positions(mol, ring["atoms"]))
+        plotter.add_mesh(
+            pv.Sphere(
+                radius=_RING_MARKER_RADIUS, center=tuple(float(c) for c in centroid)
+            ),
+            name=_RING_MARKER_ACTOR,
+            color="limegreen",
+            opacity=0.75,
+            pickable=False,
+        )
 
     def _clear_actors(self):
         try:
             plotter = self._context.plotter
             if plotter:
                 plotter.remove_actor("nics_grid")
+                plotter.remove_actor(_RING_MARKER_ACTOR)
                 plotter.render()
         except Exception as _e:
             logging.warning("[grid_dialog.py] _clear_actors: %s", _e)

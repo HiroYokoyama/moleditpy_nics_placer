@@ -834,7 +834,12 @@ def test_reset_rebuilds_the_grid_exactly_once():
     _select_mode(dlg, "3d")
     dlg._context.plotter.add_mesh.reset_mock()
     dlg._reset_settings()
-    assert dlg._context.plotter.add_mesh.call_count == 1
+    grid_draws = [
+        c
+        for c in dlg._context.plotter.add_mesh.call_args_list
+        if c.kwargs.get("name") == "nics_grid"
+    ]
+    assert len(grid_draws) == 1
     assert len(dlg._grid_points) == grid_mod._DEFAULT_POINTS**2
 
 
@@ -950,3 +955,91 @@ def test_reset_restores_the_added_settings_too():
     assert dlg._confirm_spin.value() == grid_mod._DEFAULT_CONFIRM_ABOVE
     assert dlg._radius_spin.value() == pytest.approx(grid_mod._DEFAULT_SPHERE_RADIUS)
     assert dlg._preview_max_spin.value() == grid_mod._PREVIEW_MAX
+
+
+# ---------------------------------------------------------------------------
+# Selected-ring highlight
+# ---------------------------------------------------------------------------
+
+
+def _marker_calls(dlg):
+    return [
+        c
+        for c in dlg._context.plotter.add_mesh.call_args_list
+        if c.kwargs.get("name") == grid_mod._RING_MARKER_ACTOR
+    ]
+
+
+@needs_dialog
+def test_the_anchoring_ring_is_marked_in_green():
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    calls = _marker_calls(dlg)
+    assert calls, "no ring marker drawn"
+    assert calls[-1].kwargs["color"] == "limegreen"
+
+
+@needs_dialog
+def test_the_marker_sits_on_the_selected_ring_centroid():
+    from nics_placer.nics_math import get_ring_positions, ring_centroid
+
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    dlg._table.selectRow(1)
+    dlg._on_params_changed()
+    expected = ring_centroid(
+        get_ring_positions(dlg._context.current_molecule, dlg._rings[1]["atoms"])
+    )
+    grid_mod.pv.Sphere.assert_called_with(
+        radius=grid_mod._RING_MARKER_RADIUS,
+        center=tuple(float(c) for c in expected),
+    )
+
+
+@needs_dialog
+def test_selecting_a_different_ring_moves_the_marker():
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    first = grid_mod.pv.Sphere.call_args.kwargs["center"]
+    dlg._table.selectRow(1)
+    dlg._on_params_changed()
+    assert grid_mod.pv.Sphere.call_args.kwargs["center"] != first
+
+
+@needs_dialog
+def test_no_marker_for_a_lab_plane():
+    """A lab grid is molecule-wide and the ring table is disabled, so marking a
+    ring would point at something the grid does not depend on."""
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    assert _marker_calls(dlg)
+    dlg._context.plotter.add_mesh.reset_mock()
+    _select_plane(dlg, "xy")
+    assert not _marker_calls(dlg)
+    dlg._context.plotter.remove_actor.assert_any_call(grid_mod._RING_MARKER_ACTOR)
+
+
+@needs_dialog
+def test_no_marker_when_the_molecule_has_no_rings():
+    dlg = _dialog(smiles="CCCC")
+    _select_plane(dlg, "parallel")
+    assert not _marker_calls(dlg)
+
+
+@needs_dialog
+def test_marker_is_removed_on_close():
+    dlg = _dialog()
+    dlg.closeEvent(MagicMock())
+    dlg._context.plotter.remove_actor.assert_any_call(grid_mod._RING_MARKER_ACTOR)
+
+
+@needs_dialog
+def test_no_marker_once_the_molecule_is_gone():
+    """The ring list outlives the molecule for one poll tick after a document
+    reset, so the marker must re-check rather than trust _rings."""
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    dlg._context.plotter.add_mesh.reset_mock()
+    dlg._context.current_molecule = None
+    dlg._render_spheres()
+    assert not _marker_calls(dlg)

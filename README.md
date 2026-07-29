@@ -64,7 +64,7 @@ Six plane choices set the orientation (in 3D, the orientation of the box):
 | Perpendicular, along v (v–n) | Ring | As above, rotated 90° about the normal |
 | XY / XZ / YZ | Lab | Fixed cuts through the whole molecule |
 
-Ring-frame grids follow the ring selected in the table — *u* is anchored to the first ring atom, so rotating the molecule rotates the grid with it. Lab planes are molecule-wide.
+Ring-frame grids follow the ring selected in the table — *u* is anchored to the first ring atom, so rotating the molecule rotates the grid with it. The anchoring ring's centroid is marked with a **green sphere** in the 3D view so it is obvious which ring the grid is tied to. Lab planes are molecule-wide and show no marker, since the ring table does not apply to them.
 
 - **Centre on molecular centre of mass** (default **on**) — the grid is centred on the mass-weighted centre of the molecule. Hydrogens count; ghost atoms have zero mass and so drop out on their own, which matters because otherwise every re-run would drag the centre toward the probes placed by the last one. Unchecking falls back to the ring's own centroid for a ring-frame grid (where a single-ring face map wants to sit) and to the heavy-atom bounding-box centre for a lab grid. The plane sets the orientation either way.
 
