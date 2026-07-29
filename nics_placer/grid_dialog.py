@@ -114,8 +114,9 @@ class NicsGridDialog(QDialog):
 
         layout.addWidget(
             QLabel(
-                "Places an <b>N x N</b> sheet of Bq probes. Ring-frame planes follow "
-                "the ring selected below; lab planes cut the whole molecule."
+                "Places a <b>plane</b> or a <b>box</b> of Bq probes. Ring-frame "
+                "planes follow the ring selected below — its centre is marked "
+                "green in the 3D view; lab planes cut the whole molecule."
             )
         )
 
