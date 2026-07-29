@@ -105,6 +105,12 @@ class _FakeTableWidget(_QBase):
     def selectedIndexes(self):
         return [_FakeIndex(r) for r in self._selected_rows]
 
+    def setEnabled(self, b):
+        self._enabled = bool(b)
+
+    def isEnabled(self):
+        return getattr(self, "_enabled", True)
+
     def selectRow(self, row):
         self._selected_rows = [row]
 
@@ -150,6 +156,20 @@ class _FakeSpinBox(_QBase):
 
 class _FakeDoubleSpinBox(_FakeSpinBox):
     _cast = float
+
+
+class _FakeLabel(_QBase):
+    """QLabel stand-in.
+
+    Must be a class, not a bare MagicMock: ``QLabel = MagicMock()`` hands back
+    the same return_value for every call, so every label in a dialog would be
+    one shared object and a test reading one label's text would silently be
+    reading another's.
+    """
+
+    def __init__(self, text="", *a, **kw):
+        super().__init__(*a, **kw)
+        self._text = text
 
 
 class _FakeCheckBox(_QBase):
@@ -269,7 +289,7 @@ def install_qt_stubs():
     qt_widgets.QComboBox = _FakeComboBox
     qt_widgets.QHBoxLayout = MagicMock()
     qt_widgets.QHeaderView = MagicMock()
-    qt_widgets.QLabel = MagicMock()
+    qt_widgets.QLabel = _FakeLabel
     qt_widgets.QPushButton = MagicMock()
     qt_widgets.QTableWidget = _FakeTableWidget
     qt_widgets.QTableWidgetItem = _FakeTableWidgetItem
@@ -277,6 +297,7 @@ def install_qt_stubs():
     qt_widgets.QCheckBox = _FakeCheckBox
     qt_widgets.QDoubleSpinBox = _FakeDoubleSpinBox
     qt_widgets.QFormLayout = MagicMock()
+    qt_widgets.QGroupBox = MagicMock()
     qt_widgets.QSpinBox = _FakeSpinBox
 
     class _QMessageBox:

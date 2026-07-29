@@ -227,14 +227,25 @@ def test_axis_rows_are_named_for_the_current_plane():
 
 
 @needs_dialog
-def test_ring_table_is_disabled_for_lab_planes():
+def test_ring_table_is_hidden_for_lab_planes():
     """A lab-frame grid is molecule-wide, so picking a ring would be
-    misleading."""
+    misleading -- hide the box rather than leave it visible but dead."""
     dlg = _dialog()
     _select_plane(dlg, "xy")
-    dlg._table.setEnabled.assert_called_with(False)
+    dlg._ring_group.setVisible.assert_called_with(False)
+    assert not dlg._table.isEnabled()
     _select_plane(dlg, "parallel")
-    dlg._table.setEnabled.assert_called_with(True)
+    dlg._ring_group.setVisible.assert_called_with(True)
+    assert dlg._table.isEnabled()
+
+
+@needs_dialog
+def test_the_hint_explains_the_current_plane_family():
+    dlg = _dialog()
+    _select_plane(dlg, "parallel")
+    assert "ring selected below" in dlg._hint_label.setText.call_args[0][0]
+    _select_plane(dlg, "yz")
+    assert "no anchor" in dlg._hint_label.setText.call_args[0][0]
 
 
 @needs_dialog
@@ -895,66 +906,13 @@ def test_lowering_the_confirm_threshold_prompts_for_a_small_grid():
 
 
 @needs_dialog
-def test_preview_sphere_radius_is_adjustable():
-    captured = {}
-
-    class _Poly:
-        def __init__(self, pts):
-            pass
-
-        def __setitem__(self, k, v):
-            captured[k] = v
-
-        def glyph(self, **kw):
-            return MagicMock()
-
-    dlg = _dialog()
-    grid_mod.pv.PolyData, real = _Poly, grid_mod.pv.PolyData
-    try:
-        dlg._radius_spin.setValue(0.4)
-        dlg._on_params_changed()
-    finally:
-        grid_mod.pv.PolyData = real
-    assert captured["r"][0] == pytest.approx(0.4)
-
-
-@needs_dialog
-def test_preview_decimation_threshold_is_adjustable():
-    captured = {}
-
-    class _Poly:
-        def __init__(self, pts):
-            captured["n"] = len(pts)
-
-        def __setitem__(self, k, v):
-            pass
-
-        def glyph(self, **kw):
-            return MagicMock()
-
-    dlg = _dialog()
-    grid_mod.pv.PolyData, real = _Poly, grid_mod.pv.PolyData
-    try:
-        dlg._preview_max_spin.setValue(100)
-        _set_counts(dlg, 31, 31)
-    finally:
-        grid_mod.pv.PolyData = real
-    assert len(dlg._grid_points) == 961
-    assert captured["n"] <= 100
-
-
-@needs_dialog
 def test_reset_restores_the_added_settings_too():
     dlg = _dialog()
     dlg._margin_spin.setValue(9.0)
     dlg._confirm_spin.setValue(7)
-    dlg._radius_spin.setValue(0.9)
-    dlg._preview_max_spin.setValue(150)
     dlg._reset_settings()
     assert dlg._margin_spin.value() == pytest.approx(grid_mod._DEFAULT_MARGIN)
     assert dlg._confirm_spin.value() == grid_mod._DEFAULT_CONFIRM_ABOVE
-    assert dlg._radius_spin.value() == pytest.approx(grid_mod._DEFAULT_SPHERE_RADIUS)
-    assert dlg._preview_max_spin.value() == grid_mod._PREVIEW_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -1104,3 +1062,50 @@ def test_2d_never_reaches_the_build_limit():
     dlg = _dialog()
     _set_counts(dlg, 101, 101)
     assert len(dlg._grid_points) == 10201
+
+
+# ---------------------------------------------------------------------------
+# Offset is 2D-only
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_offset_is_disabled_and_zeroed_in_3d():
+    """A 3D box already spans the normal symmetrically, so an offset only
+    slides it off the centre just chosen."""
+    dlg = _dialog()
+    dlg._offset_spin.setValue(2.5)
+    dlg._on_params_changed()
+    _select_mode(dlg, "3d")
+    assert dlg._offset_spin.value() == pytest.approx(0.0)
+    assert not dlg._offset_spin.isEnabled()
+
+
+@needs_dialog
+def test_a_3d_box_is_centred_on_the_chosen_centre():
+    from nics_placer.nics_math import center_of_mass
+
+    dlg = _dialog()
+    dlg._offset_spin.setValue(3.0)
+    _select_mode(dlg, "3d")
+    _set_counts(dlg, 3, 3, 3)
+    centre = next(
+        p["pos"]
+        for p in dlg._grid_points
+        if p["i"] == 1 and p["j"] == 1 and p["k"] == 1
+    )
+    np.testing.assert_allclose(
+        centre, center_of_mass(dlg._context.current_molecule), atol=1e-9
+    )
+
+
+@needs_dialog
+def test_offset_comes_back_when_returning_to_2d():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    assert not dlg._offset_spin.isEnabled()
+    _select_mode(dlg, "2d")
+    assert dlg._offset_spin.isEnabled()
+    dlg._offset_spin.setValue(1.0)
+    dlg._on_params_changed()
+    assert max(abs(float(p["pos"][2])) for p in dlg._grid_points) > 0

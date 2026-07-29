@@ -74,9 +74,9 @@ Ring-frame grids follow the ring selected in the table — *u* is anchored to th
 
 - **Auto half-widths** — each axis is fitted to the molecule separately by projecting every heavy atom onto that axis, plus a ~2 Å margin, so the field is sampled where it has decayed rather than clipped at the last atom. This is exact for a tilted ring frame too: a lab-space bounding box would either clip a tilted grid or, padded by its diagonal, massively oversize it. Uncheck to set the half-widths by hand.
 - **Uniform spacing (cubic cells)** — derive the point counts from a step size (default 1 Å) instead of setting them directly. Each half-width is first grown to a whole number of steps, so the step comes out *exactly* the requested value on every axis while the counts still follow the molecular shape. Rounding only the count would not do this: half-widths of 4.4 / 4.3 / 4.2 at a 1 Å request all land on 10 points — counts identical — yet step 0.978 / 0.956 / 0.933.
-- **Auto-fit margin**, **confirmation threshold**, and **preview sphere size / decimation limit** are all adjustable.
+- The **auto-fit margin** and the **confirmation threshold** are adjustable.
 - Grids beyond 200,000 probes are reported rather than built. That is a responsiveness guard, not a chemistry one — the grid rebuilds on every control change, and the maximum 101 points on all three axes is over a million probes and several seconds per keystroke.
-- **Offset** applies on every plane, lab planes included, and moves the whole grid along that plane's own normal. It defaults to **0** — the ring plane itself.
+- **Offset** moves a 2D plane along its own normal — 1 Å gives a NICS(1) face map — and applies on every plane, lab planes included. It defaults to **0**, the ring plane itself, and is disabled in 3D, where the box already spans the normal symmetrically and an offset would only slide it off the centre you just chose.
 - Live **probe count and per-axis spacing** readout, with the axes named for the current plane (X/Y/Z, or u/v/n in a ring frame); grids above 400 probes are flagged and confirmed before placement, since NMR cost grows with the number of ghost centres
 - Ghost atoms are placed in one batch, and the preview is decimated above 2000 points so a large box does not stall the viewport
 

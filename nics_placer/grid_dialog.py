@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -94,7 +95,6 @@ _DEFAULT_EXTENT = 3.0
 _DEFAULT_SPACING = 1.0
 _DEFAULT_MARGIN = 2.0
 _DEFAULT_CONFIRM_ABOVE = _CONFIRM_ABOVE
-_DEFAULT_SPHERE_RADIUS = _GRID_SPHERE_RADIUS
 
 
 class NicsGridDialog(QDialog):
@@ -118,14 +118,34 @@ class NicsGridDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        layout.addWidget(
-            QLabel(
-                "Places a <b>plane</b> or a <b>box</b> of Bq probes. Ring-frame "
-                "planes follow the ring selected below — its centre is marked "
-                "green in the 3D view; lab planes cut the whole molecule."
-            )
-        )
+        # Mode and plane come first: they decide what the rest of the dialog
+        # even means -- which axes exist, and whether a ring anchors the grid.
+        # Asking for them first stops the settings below from silently
+        # changing meaning underneath the user.
+        top = QFormLayout()
 
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem("2D - plane of probes", "2d")
+        self._mode_combo.addItem("3D - volume of probes (ICSS)", "3d")
+        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        top.addRow("Mode:", self._mode_combo)
+
+        self._plane_combo = QComboBox()
+        for key in GRID_PLANES:
+            self._plane_combo.addItem(GRID_PLANE_LABELS[key], key)
+        self._plane_combo.currentIndexChanged.connect(self._on_plane_changed)
+        top.addRow("Plane:", self._plane_combo)
+        layout.addLayout(top)
+
+        self._hint_label = QLabel()
+        self._hint_label.setWordWrap(True)
+        layout.addWidget(self._hint_label)
+
+        # The ring table lives in its own box so it can be hidden wholesale for
+        # the lab planes, which are molecule-wide and have no anchoring ring.
+        # A disabled-but-visible table just invites clicking at it.
+        self._ring_group = QGroupBox("Anchor ring")
+        ring_layout = QVBoxLayout(self._ring_group)
         self._table = QTableWidget()
         self._table.setColumnCount(4)
         self._table.setHorizontalHeaderLabels(["Ring", "Size", "Aromatic", "Planarity"])
@@ -135,44 +155,34 @@ class NicsGridDialog(QDialog):
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.setMaximumHeight(150)
+        self._table.setMaximumHeight(140)
         self._table.itemSelectionChanged.connect(self._on_params_changed)
-        layout.addWidget(self._table)
+        ring_layout.addWidget(self._table)
+        layout.addWidget(self._ring_group)
 
-        form = QFormLayout()
-
-        self._mode_combo = QComboBox()
-        self._mode_combo.addItem("2D — plane of probes", "2d")
-        self._mode_combo.addItem("3D — volume of probes (ICSS)", "3d")
-        self._mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        form.addRow("Mode:", self._mode_combo)
-
-        self._plane_combo = QComboBox()
-        for key in GRID_PLANES:
-            self._plane_combo.addItem(GRID_PLANE_LABELS[key], key)
-        self._plane_combo.currentIndexChanged.connect(self._on_plane_changed)
-        form.addRow("Plane:", self._plane_combo)
+        # ---- Extent -------------------------------------------------------
+        extent_group = QGroupBox("Extent")
+        extent_form = QFormLayout(extent_group)
 
         # Centre of mass is the frame most NICS work is quoted in, so it is the
         # default. Note what unchecking does: a ring-frame grid falls back to
         # its own ring's centroid (which is where a single-ring face map wants
         # to be), a lab grid to the heavy-atom bounding-box centre.
-        self._use_com = QCheckBox("Centre on molecular centre of mass")
+        self._use_com = QCheckBox("Molecular centre of mass")
         self._use_com.setChecked(True)
         self._use_com.setToolTip(
-            "Unchecked: ring-frame grids centre on their own ring, lab grids on "
-            "the heavy-atom bounding box.\n"
-            "The plane still sets the orientation either way."
+            "Unchecked: ring-frame grids centre on their own ring, lab grids "
+            "on the heavy-atom bounding box. The plane still sets the "
+            "orientation either way."
         )
         self._use_com.toggled.connect(self._on_params_changed)
-        form.addRow("Centre:", self._use_com)
+        extent_form.addRow("Centre:", self._use_com)
 
-        extent_row = QHBoxLayout()
-        self._auto_extent = QCheckBox("Auto — fit each axis to the molecule")
+        margin_row = QHBoxLayout()
+        self._auto_extent = QCheckBox("Fit each axis to the molecule, margin")
         self._auto_extent.setChecked(True)
         self._auto_extent.toggled.connect(self._on_auto_toggled)
-        extent_row.addWidget(self._auto_extent)
-        extent_row.addWidget(QLabel("margin"))
+        margin_row.addWidget(self._auto_extent)
         self._margin_spin = QDoubleSpinBox()
         self._margin_spin.setRange(0.0, 20.0)
         self._margin_spin.setSingleStep(0.5)
@@ -180,13 +190,29 @@ class NicsGridDialog(QDialog):
         self._margin_spin.setValue(_DEFAULT_MARGIN)
         self._margin_spin.setSuffix(" A")
         self._margin_spin.setToolTip(
-            "Padding added beyond the outermost atom on each axis, so the "
+            "Padding beyond the outermost atom on each axis, so the "
             "ring-current field is sampled where it has decayed rather than "
             "clipped at the last atom. ~2 A is about one van der Waals radius."
         )
         self._margin_spin.valueChanged.connect(self._on_params_changed)
-        extent_row.addWidget(self._margin_spin)
-        form.addRow("Half-widths:", extent_row)
+        margin_row.addWidget(self._margin_spin)
+        margin_row.addStretch()
+        extent_form.addRow("Auto:", margin_row)
+
+        self._offset_spin = QDoubleSpinBox()
+        self._offset_spin.setRange(-50.0, 50.0)
+        self._offset_spin.setSingleStep(0.5)
+        self._offset_spin.setDecimals(2)
+        self._offset_spin.setValue(0.0)
+        self._offset_spin.setSuffix(" A")
+        self._offset_spin.valueChanged.connect(self._on_params_changed)
+        self._offset_row_label = QLabel("Offset along normal:")
+        extent_form.addRow(self._offset_row_label, self._offset_spin)
+        layout.addWidget(extent_group)
+
+        # ---- Sampling -----------------------------------------------------
+        sampling_group = QGroupBox("Sampling")
+        sampling_form = QFormLayout(sampling_group)
 
         # Uniform spacing derives the counts from a step size instead. With
         # independent half-widths, equal counts do NOT mean equal spacing, and
@@ -205,7 +231,8 @@ class NicsGridDialog(QDialog):
         self._spacing_spin.setEnabled(False)
         self._spacing_spin.valueChanged.connect(self._on_params_changed)
         spacing_row.addWidget(self._spacing_spin)
-        form.addRow("Step:", spacing_row)
+        spacing_row.addStretch()
+        sampling_form.addRow("Step:", spacing_row)
 
         # One row per axis: count + half-width, so a rectangular grid is as
         # easy to ask for as a square one. Molecules are rarely square.
@@ -227,60 +254,36 @@ class NicsGridDialog(QDialog):
             e_spin.setEnabled(False)
             e_spin.valueChanged.connect(self._on_params_changed)
             row.addWidget(e_spin)
+            row.addStretch()
             label = QLabel(f"Axis {slot + 1}:")
-            form.addRow(label, row)
+            sampling_form.addRow(label, row)
             self._axis_rows.append({"label": label, "n": n_spin, "e": e_spin})
+        layout.addWidget(sampling_group)
 
-        self._offset_spin = QDoubleSpinBox()
-        self._offset_spin.setRange(-50.0, 50.0)
-        self._offset_spin.setSingleStep(0.5)
-        self._offset_spin.setDecimals(2)
-        self._offset_spin.setValue(0.0)
-        self._offset_spin.setSuffix(" A")
-        self._offset_spin.valueChanged.connect(self._on_params_changed)
-        self._offset_row_label = QLabel("Offset along plane normal:")
-        form.addRow(self._offset_row_label, self._offset_spin)
+        # ---- Output -------------------------------------------------------
+        output_group = QGroupBox("Output")
+        output_form = QFormLayout(output_group)
 
         self._sym_combo = QComboBox()
         self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
         self._sym_combo.addItem("H:  (ORCA native)", "H:")
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
-        form.addRow("Ghost atom label:", self._sym_combo)
+        output_form.addRow("Ghost atom label:", self._sym_combo)
 
+        confirm_row = QHBoxLayout()
         self._confirm_spin = QSpinBox()
         self._confirm_spin.setRange(0, 100000)
         self._confirm_spin.setValue(_DEFAULT_CONFIRM_ABOVE)
         self._confirm_spin.setToolTip(
-            "Ask for confirmation before placing more than this many probes. "
-            "NMR cost grows with the number of ghost centres. Set to 0 to be "
-            "asked every time."
+            "Ask before placing more than this many probes. NMR cost grows "
+            "with the number of ghost centres. Set to 0 to be asked every time."
         )
         self._confirm_spin.valueChanged.connect(self._on_params_changed)
-        form.addRow("Confirm above:", self._confirm_spin)
-
-        preview_row = QHBoxLayout()
-        self._radius_spin = QDoubleSpinBox()
-        self._radius_spin.setRange(0.01, 2.0)
-        self._radius_spin.setSingleStep(0.02)
-        self._radius_spin.setDecimals(2)
-        self._radius_spin.setValue(_DEFAULT_SPHERE_RADIUS)
-        self._radius_spin.setSuffix(" A")
-        self._radius_spin.setToolTip("Radius of the preview spheres. Display only.")
-        self._radius_spin.valueChanged.connect(self._on_params_changed)
-        preview_row.addWidget(self._radius_spin)
-        preview_row.addWidget(QLabel("max shown"))
-        self._preview_max_spin = QSpinBox()
-        self._preview_max_spin.setRange(100, 100000)
-        self._preview_max_spin.setValue(_PREVIEW_MAX)
-        self._preview_max_spin.setToolTip(
-            "Preview spheres are thinned above this count so a large box does "
-            "not stall the viewport. Placement always uses every probe."
-        )
-        self._preview_max_spin.valueChanged.connect(self._on_params_changed)
-        preview_row.addWidget(self._preview_max_spin)
-        form.addRow("Preview sphere:", preview_row)
-
-        layout.addLayout(form)
+        confirm_row.addWidget(self._confirm_spin)
+        confirm_row.addWidget(QLabel("probes"))
+        confirm_row.addStretch()
+        output_form.addRow("Confirm above:", confirm_row)
+        layout.addWidget(output_group)
 
         self._count_label = QLabel()
         self._count_label.setWordWrap(True)
@@ -354,19 +357,37 @@ class NicsGridDialog(QDialog):
             row["label"].setText(f"Axis {names[slot]}:")
 
     def _on_plane_changed(self, _index):
-        # A ring-frame grid is anchored to one ring, so the ring table only
-        # matters for those; lab planes are molecule-wide.
-        self._table.setEnabled(self._current_plane() not in LAB_GRID_PLANES)
+        # A ring-frame grid is anchored to one ring; lab planes are
+        # molecule-wide, so the table does not apply and is hidden rather than
+        # left visible-but-dead.
+        ring_frame = self._current_plane() not in LAB_GRID_PLANES
+        self._ring_group.setVisible(ring_frame)
+        self._table.setEnabled(ring_frame)
+        self._hint_label.setText(
+            "Follows the ring selected below; its centre is marked green in "
+            "the 3D view."
+            if ring_frame
+            else "Fixed laboratory axes across the whole molecule; no anchor "
+            "ring applies."
+        )
         self._refresh_axis_rows()
         self._on_params_changed()
 
     def _on_mode_changed(self, _index):
         is3d = self._is_3d()
         self._refresh_axis_rows()
-        # In 3D the plane only sets the box orientation, so "offset" moves the
-        # whole box rather than picking a slice height.
+        # In 2D the offset picks which slice you are sampling -- 1 A is the
+        # NICS(1) face map. In 3D the box already spans the normal direction
+        # symmetrically, so an offset only slides it off the centre you just
+        # chose: redundant at best, misleading at worst. Force it to zero.
+        if is3d:
+            self._offset_spin.blockSignals(True)
+            self._offset_spin.setValue(0.0)
+            self._offset_spin.blockSignals(False)
+        self._offset_spin.setEnabled(not is3d)
+        self._offset_row_label.setEnabled(not is3d)
         self._offset_row_label.setText(
-            "Box centre offset along normal:" if is3d else "Offset along plane normal:"
+            "Offset along normal (2D only):" if is3d else "Offset along normal:"
         )
         self._plane_combo.setToolTip(
             "In 3D mode the plane only fixes the box orientation." if is3d else ""
@@ -419,8 +440,6 @@ class NicsGridDialog(QDialog):
             self._offset_spin.setValue(0.0)
             self._margin_spin.setValue(_DEFAULT_MARGIN)
             self._confirm_spin.setValue(_DEFAULT_CONFIRM_ABOVE)
-            self._radius_spin.setValue(_DEFAULT_SPHERE_RADIUS)
-            self._preview_max_spin.setValue(_PREVIEW_MAX)
             for row in self._axis_rows:
                 row["n"].setValue(_DEFAULT_POINTS)
                 row["n"].setEnabled(True)
@@ -429,7 +448,6 @@ class NicsGridDialog(QDialog):
         finally:
             for w in widgets:
                 w.blockSignals(False)
-        self._table.setEnabled(True)
         self._refresh_axis_rows()
         self._on_mode_changed(0)
 
@@ -615,12 +633,12 @@ class NicsGridDialog(QDialog):
                 # stalls the viewer on every spinbox tick. The preview only has
                 # to show where the box sits, so thin it out — placement still
                 # uses every point.
-                preview_max = self._preview_max_spin.value()
+                preview_max = _PREVIEW_MAX
                 if len(pts) > preview_max:
                     stride = int(np.ceil(len(pts) / preview_max))
                     pts = pts[::stride]
                 poly = pv.PolyData(pts)
-                poly["r"] = [self._radius_spin.value()] * len(pts)
+                poly["r"] = [_GRID_SPHERE_RADIUS] * len(pts)
                 mesh = poly.glyph(geom=pv.Sphere(radius=1.0), scale="r", orient=False)
                 plotter.add_mesh(
                     mesh,
