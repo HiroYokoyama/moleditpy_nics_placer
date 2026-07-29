@@ -11,8 +11,11 @@ in 3D they fix the orientation of the box:
                 face map (a NICS(1) surface); the two perpendicular planes
                 contain the ring normal and give the side-on scan that shows
                 the ring-current cone.
-  Lab frame   – fixed XY / XZ / YZ cuts through the whole molecule, centred on
-                the heavy-atom bounding box and sized from it.
+  Lab frame   – fixed XY / XZ / YZ cuts through the whole molecule.
+
+By default the grid is centred on the molecular centre of mass; unchecking
+that falls back to the ring centroid (ring frame) or the heavy-atom bounding
+box (lab frame).
 
 Every probe is an ordinary Bq ghost atom, so the result drops straight into
 ORCA Input Generator Pro or a Gaussian NMR job exactly like the single-point
@@ -51,6 +54,7 @@ from .nics_math import (
     GRID_PLANES,
     LAB_GRID_PLANES,
     axis_extents,
+    center_of_mass,
     compute_nics_grid,
     compute_nics_volume,
     counts_for_spacing,
@@ -69,6 +73,12 @@ _GRID_SPHERE_RADIUS = 0.12  # smaller than the single-probe spheres: grids are d
 
 #: Preview spheres are decimated above this count — see _render_spheres.
 _PREVIEW_MAX = 2000
+
+#: Control defaults, shared by the initial build and the Reset button so the
+#: two cannot drift apart.
+_DEFAULT_POINTS = 9
+_DEFAULT_EXTENT = 3.0
+_DEFAULT_SPACING = 0.5
 
 
 class NicsGridDialog(QDialog):
@@ -126,6 +136,20 @@ class NicsGridDialog(QDialog):
         self._plane_combo.currentIndexChanged.connect(self._on_plane_changed)
         form.addRow("Plane:", self._plane_combo)
 
+        # Centre of mass is the frame most NICS work is quoted in, so it is the
+        # default. Note what unchecking does: a ring-frame grid falls back to
+        # its own ring's centroid (which is where a single-ring face map wants
+        # to be), a lab grid to the heavy-atom bounding-box centre.
+        self._use_com = QCheckBox("Centre on molecular centre of mass")
+        self._use_com.setChecked(True)
+        self._use_com.setToolTip(
+            "Unchecked: ring-frame grids centre on their own ring, lab grids on "
+            "the heavy-atom bounding box.\n"
+            "The plane still sets the orientation either way."
+        )
+        self._use_com.toggled.connect(self._on_params_changed)
+        form.addRow("Centre:", self._use_com)
+
         self._auto_extent = QCheckBox("Auto — fit each axis to the molecule")
         self._auto_extent.setChecked(True)
         self._auto_extent.toggled.connect(self._on_auto_toggled)
@@ -143,7 +167,7 @@ class NicsGridDialog(QDialog):
         self._spacing_spin.setRange(0.05, 10.0)
         self._spacing_spin.setSingleStep(0.1)
         self._spacing_spin.setDecimals(2)
-        self._spacing_spin.setValue(0.5)
+        self._spacing_spin.setValue(_DEFAULT_SPACING)
         self._spacing_spin.setSuffix(" A")
         self._spacing_spin.setEnabled(False)
         self._spacing_spin.valueChanged.connect(self._on_params_changed)
@@ -157,7 +181,7 @@ class NicsGridDialog(QDialog):
             row = QHBoxLayout()
             n_spin = QSpinBox()
             n_spin.setRange(1, 101)
-            n_spin.setValue(9)
+            n_spin.setValue(_DEFAULT_POINTS)
             n_spin.valueChanged.connect(self._on_params_changed)
             row.addWidget(n_spin)
             row.addWidget(QLabel("points over +/-"))
@@ -165,7 +189,7 @@ class NicsGridDialog(QDialog):
             e_spin.setRange(0.0, 100.0)
             e_spin.setSingleStep(0.5)
             e_spin.setDecimals(2)
-            e_spin.setValue(3.0)
+            e_spin.setValue(_DEFAULT_EXTENT)
             e_spin.setSuffix(" A")
             e_spin.setEnabled(False)
             e_spin.valueChanged.connect(self._on_params_changed)
@@ -209,6 +233,11 @@ class NicsGridDialog(QDialog):
         btn_refresh = QPushButton("Refresh")
         btn_refresh.clicked.connect(self._reload)
         row.addWidget(btn_refresh)
+
+        btn_reset = QPushButton("Reset Settings")
+        btn_reset.setToolTip("Restore the grid controls to their defaults.")
+        btn_reset.clicked.connect(self._reset_settings)
+        row.addWidget(btn_reset)
 
         row.addStretch()
         btn_close = QPushButton("Close")
@@ -291,6 +320,49 @@ class NicsGridDialog(QDialog):
             row["n"].setEnabled(not checked)
         self._on_params_changed()
 
+    def _reset_settings(self):
+        """Restore every grid control to its default.
+
+        Signals are blocked throughout so the grid is rebuilt once at the end
+        rather than once per widget — a half-reset intermediate state can be an
+        expensive grid (small step, large extent) that nobody asked for.
+        The ghost-atom label is deliberately left alone: it is a persisted
+        user/project preference, not a grid parameter.
+        """
+        widgets = [
+            self._mode_combo,
+            self._plane_combo,
+            self._use_com,
+            self._auto_extent,
+            self._uniform_spacing,
+            self._spacing_spin,
+            self._offset_spin,
+        ]
+        widgets += [row["n"] for row in self._axis_rows]
+        widgets += [row["e"] for row in self._axis_rows]
+        for w in widgets:
+            w.blockSignals(True)
+        try:
+            self._mode_combo.setCurrentIndex(0)
+            self._plane_combo.setCurrentIndex(0)
+            self._use_com.setChecked(True)
+            self._auto_extent.setChecked(True)
+            self._uniform_spacing.setChecked(False)
+            self._spacing_spin.setValue(_DEFAULT_SPACING)
+            self._spacing_spin.setEnabled(False)
+            self._offset_spin.setValue(0.0)
+            for row in self._axis_rows:
+                row["n"].setValue(_DEFAULT_POINTS)
+                row["n"].setEnabled(True)
+                row["e"].setValue(_DEFAULT_EXTENT)
+                row["e"].setEnabled(False)
+        finally:
+            for w in widgets:
+                w.blockSignals(False)
+        self._table.setEnabled(True)
+        self._refresh_axis_rows()
+        self._on_mode_changed(0)
+
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
@@ -321,7 +393,10 @@ class NicsGridDialog(QDialog):
                     return
                 ring = self._rings[min(self._selected_ring(), len(self._rings) - 1)]
                 positions = get_ring_positions(mol, ring["atoms"])
+                # None lets the grid builders fall back to the ring centroid.
                 center = None
+            if self._use_com.isChecked():
+                center = center_of_mass(mol)
 
             reference = molecular_reference_normal(mol)
             if self._auto_extent.isChecked():

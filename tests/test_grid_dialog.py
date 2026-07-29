@@ -224,16 +224,59 @@ def test_ring_table_is_disabled_for_lab_planes():
 
 
 @needs_dialog
-def test_lab_grid_is_centred_on_the_molecule():
-    from nics_placer.nics_math import molecule_bounds
+def test_lab_grid_defaults_to_the_centre_of_mass():
+    from nics_placer.nics_math import center_of_mass
 
     dlg = _dialog(smiles="c1ccc2ccccc2c1")
     _select_plane(dlg, "xy")
     _set_counts(dlg, 3, 3)
     centre = next(p["pos"] for p in dlg._grid_points if p["i"] == 1 and p["j"] == 1)
-    expected = molecule_bounds(dlg._context.current_molecule)[0]
+    expected = center_of_mass(dlg._context.current_molecule)
     expected = expected + dlg._offset_spin.value() * np.array([0.0, 0.0, 1.0])
     np.testing.assert_allclose(centre, expected, atol=1e-9)
+
+
+@needs_dialog
+def test_unchecking_com_falls_back_to_the_bounding_box_for_a_lab_grid():
+    from nics_placer.nics_math import molecule_bounds
+
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "xy")
+    dlg._use_com.setChecked(False)
+    _set_counts(dlg, 3, 3)
+    centre = next(p["pos"] for p in dlg._grid_points if p["i"] == 1 and p["j"] == 1)
+    expected = molecule_bounds(dlg._context.current_molecule)[0]
+    np.testing.assert_allclose(centre, expected, atol=1e-9)
+
+
+@needs_dialog
+def test_unchecking_com_puts_a_ring_grid_back_on_its_ring():
+    """A single-ring face map wants to sit over the ring, not over the whole
+    molecule -- that is what unchecking is for."""
+    from nics_placer.nics_math import get_ring_positions, ring_centroid
+
+    dlg = _dialog(smiles="c1ccc2ccccc2c1")
+    _select_plane(dlg, "parallel")
+    dlg._use_com.setChecked(False)
+    _set_counts(dlg, 3, 3)
+    centre = next(p["pos"] for p in dlg._grid_points if p["i"] == 1 and p["j"] == 1)
+    ring = dlg._rings[0]
+    expected = ring_centroid(
+        get_ring_positions(dlg._context.current_molecule, ring["atoms"])
+    )
+    np.testing.assert_allclose(centre, expected, atol=1e-9)
+
+
+@needs_dialog
+def test_com_and_ring_centroid_differ_for_an_off_centre_ring():
+    """Guard against the two options being silently identical -- on
+    naphthalene each ring centroid is well away from the molecular centre."""
+    from nics_placer.nics_math import center_of_mass, get_ring_positions, ring_centroid
+
+    mol = _mol_3d("c1ccc2ccccc2c1")
+    dlg = _dialog(mol=mol)
+    ring_c = ring_centroid(get_ring_positions(mol, dlg._rings[0]["atoms"]))
+    assert float(np.linalg.norm(center_of_mass(mol) - ring_c)) > 1.0
 
 
 @needs_dialog
@@ -637,11 +680,11 @@ def test_offset_defaults_to_zero():
     ],
 )
 def test_offset_shifts_a_lab_plane_along_its_own_normal(plane, axis):
-    from nics_placer.nics_math import molecule_bounds
+    from nics_placer.nics_math import center_of_mass
 
     dlg = _dialog()
     _select_plane(dlg, plane)
-    centre = molecule_bounds(dlg._context.current_molecule)[0]
+    centre = center_of_mass(dlg._context.current_molecule)
     dlg._offset_spin.setValue(2.0)
     dlg._on_params_changed()
     for p in dlg._grid_points:
@@ -662,3 +705,76 @@ def test_count_label_names_the_axes_of_the_current_plane():
     _select_plane(dlg, "xz")
     text = dlg._count_label.setText.call_args[0][0]
     assert "X" in text and "Z" in text
+
+
+# ---------------------------------------------------------------------------
+# Reset
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_reset_restores_every_grid_control():
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    _select_plane(dlg, "yz")
+    dlg._use_com.setChecked(False)
+    dlg._uniform_spacing.setChecked(True)
+    dlg._on_uniform_toggled(True)
+    dlg._spacing_spin.setValue(0.2)
+    dlg._offset_spin.setValue(4.0)
+    _set_extents(dlg, 9.0, 8.0, 7.0)
+    dlg._reset_settings()
+
+    assert dlg._mode_combo.currentData() == "2d"
+    assert dlg._current_plane() == "parallel"
+    assert dlg._use_com.isChecked()
+    assert dlg._auto_extent.isChecked()
+    assert not dlg._uniform_spacing.isChecked()
+    assert dlg._spacing_spin.value() == pytest.approx(grid_mod._DEFAULT_SPACING)
+    assert dlg._offset_spin.value() == pytest.approx(0.0)
+    assert _counts(dlg) == [grid_mod._DEFAULT_POINTS] * 3
+
+
+@needs_dialog
+def test_reset_leaves_the_ghost_label_alone():
+    """The ghost symbol is a persisted user/project preference, not a grid
+    parameter -- resetting the grid must not silently retag it."""
+    dlg = _dialog()
+    dlg._sym_combo.setCurrentIndex(1)
+    dlg._on_symbol_changed(1)
+    dlg._reset_settings()
+    assert dlg._ghost_symbol == "H:"
+
+
+@needs_dialog
+def test_reset_re_enables_the_controls_it_may_have_locked():
+    dlg = _dialog()
+    dlg._uniform_spacing.setChecked(True)
+    dlg._on_uniform_toggled(True)
+    assert all(not row["n"].isEnabled() for row in dlg._axis_rows)
+    dlg._reset_settings()
+    assert all(row["n"].isEnabled() for row in dlg._axis_rows)
+    assert all(not row["e"].isEnabled() for row in dlg._axis_rows)
+    assert not dlg._spacing_spin.isEnabled()
+
+
+@needs_dialog
+def test_reset_rebuilds_the_grid_exactly_once():
+    """Half-reset intermediate states can be very expensive grids (small step,
+    large extent); the rebuild must happen after every widget has settled."""
+    dlg = _dialog()
+    _select_mode(dlg, "3d")
+    dlg._context.plotter.add_mesh.reset_mock()
+    dlg._reset_settings()
+    assert dlg._context.plotter.add_mesh.call_count == 1
+    assert len(dlg._grid_points) == grid_mod._DEFAULT_POINTS**2
+
+
+@needs_dialog
+def test_reset_leaves_a_usable_grid():
+    dlg = _dialog()
+    _set_counts(dlg, 2, 2)
+    dlg._reset_settings()
+    assert len(dlg._grid_points) > 0
+    dlg._place_grid()
+    assert dlg._context.push_undo_checkpoint.called

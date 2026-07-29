@@ -64,7 +64,9 @@ Six plane choices set the orientation (in 3D, the orientation of the box):
 | Perpendicular, along v (v–n) | Ring | As above, rotated 90° about the normal |
 | XY / XZ / YZ | Lab | Fixed cuts through the whole molecule |
 
-Ring-frame grids follow the ring selected in the table — *u* is anchored to the first ring atom, so rotating the molecule rotates the grid with it. Lab planes are molecule-wide and centred on the heavy-atom bounding box.
+Ring-frame grids follow the ring selected in the table — *u* is anchored to the first ring atom, so rotating the molecule rotates the grid with it. Lab planes are molecule-wide.
+
+- **Centre on molecular centre of mass** (default **on**) — the grid is centred on the mass-weighted centre of the molecule. Hydrogens count; ghost atoms have zero mass and so drop out on their own, which matters because otherwise every re-run would drag the centre toward the probes placed by the last one. Unchecking falls back to the ring's own centroid for a ring-frame grid (where a single-ring face map wants to sit) and to the heavy-atom bounding-box centre for a lab grid. The plane sets the orientation either way.
 
 - **Auto half-widths** — each axis is fitted to the molecule separately by projecting every heavy atom onto that axis, plus a ~2 Å margin, so the field is sampled where it has decayed rather than clipped at the last atom. This is exact for a tilted ring frame too: a lab-space bounding box would either clip a tilted grid or, padded by its diagonal, massively oversize it. Uncheck to set the half-widths by hand.
 - **Uniform spacing (cubic cells)** — derive the point counts from a step size instead of setting them directly. With independent half-widths, equal counts do *not* mean equal spacing, and it is the spacing that decides whether the sampled field is smooth enough to contour.
@@ -93,6 +95,8 @@ Ring-frame grids follow the ring selected in the table — *u* is anchored to th
 6. Adjust the **offset** to move the grid along the plane normal (1 Å gives a NICS(1) face map).
 7. Blue spheres preview the lattice in the 3D viewport; the label reports the shape, probe count and per-axis spacing.
 8. Press **Place Grid**, then export as above.
+
+**Reset Settings** restores every grid control to its default in one step; the ghost-atom label is left alone, since that is a persisted preference rather than a grid parameter.
 
 ## Settings & Persistence
 
@@ -179,7 +183,7 @@ Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp
 
 ## Version
 
-2.0.0 — HiroYokoyama
+2.1.0 — HiroYokoyama
 
 ## License & Disclaimer
 

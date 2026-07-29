@@ -233,6 +233,32 @@ def molecule_bounds(mol) -> tuple:
     return (lo + hi) / 2.0, (hi - lo) / 2.0
 
 
+def center_of_mass(mol) -> np.ndarray:
+    """Mass-weighted centre of the molecule, in Å.
+
+    Hydrogens are included — this is a physical centre of mass, not the
+    heavy-atom construction used for the bounding box. Ghost atoms drop out on
+    their own: a dummy has atomic number 0 and therefore zero mass, so probes
+    placed by an earlier run cannot drag the centre around.
+
+    Falls back to the geometric centre if every mass is zero (a molecule of
+    nothing but ghosts), so callers always get a usable point.
+    """
+    conf = mol.GetConformer()
+    pts, masses = [], []
+    for atom in mol.GetAtoms():
+        pts.append([*conf.GetAtomPosition(atom.GetIdx())])
+        masses.append(atom.GetMass())
+    if not pts:
+        return np.zeros(3)
+    pts = np.array(pts, dtype=float)
+    masses = np.array(masses, dtype=float)
+    total = float(masses.sum())
+    if total <= 0:
+        return pts.mean(axis=0)
+    return (pts * masses[:, None]).sum(axis=0) / total
+
+
 def axis_extents(
     mol,
     plane: str = "xy",

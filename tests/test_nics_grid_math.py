@@ -61,6 +61,12 @@ def _puckered_hexagon(amplitude=0.25, radius=1.4):
     return pts
 
 
+def _ring_pts(mol, atoms):
+    from nics_placer.nics_math import get_ring_positions
+
+    return get_ring_positions(mol, atoms)
+
+
 def _build(smiles, seed=7):
     mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
     AllChem.EmbedMolecule(mol, randomSeed=seed)
@@ -719,3 +725,106 @@ class TestSizingWithoutHeavyAtoms(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Centre of mass
+# ---------------------------------------------------------------------------
+
+
+@unittest.skipIf(Chem is None, "rdkit not installed")
+class TestCenterOfMass(unittest.TestCase):
+    def test_benzene_com_sits_at_the_ring_centre(self):
+        from nics_placer.nics_math import center_of_mass, get_rings
+
+        mol = _build("c1ccccc1")
+        ring = get_rings(mol)[0]
+        centroid = ring_centroid(_ring_pts(mol, ring["atoms"]))
+        self.assertAlmostEqual(
+            float(np.linalg.norm(center_of_mass(mol) - centroid)), 0.0, places=6
+        )
+
+    def test_hydrogens_are_included(self):
+        """A physical centre of mass, not the heavy-atom construction used for
+        the bounding box: in methane the four H shift nothing by symmetry, but
+        they must be in the sum."""
+        from nics_placer.nics_math import center_of_mass, heavy_atom_positions
+
+        mol = _build("C")
+        np.testing.assert_allclose(
+            center_of_mass(mol), heavy_atom_positions(mol)[0], atol=1e-6
+        )
+
+    def test_com_is_mass_weighted_not_geometric(self):
+        """Chloromethane's COM must sit close to the chlorine, nowhere near the
+        unweighted mean of the atom positions."""
+        from nics_placer.nics_math import center_of_mass
+
+        mol = _build("CCl")
+        conf = mol.GetConformer()
+        pts = np.array(conf.GetPositions())
+        cl = next(a.GetIdx() for a in mol.GetAtoms() if a.GetSymbol() == "Cl")
+        com = center_of_mass(mol)
+        self.assertLess(
+            float(np.linalg.norm(com - pts[cl])),
+            float(np.linalg.norm(pts.mean(axis=0) - pts[cl])),
+        )
+
+    def test_ghost_atoms_do_not_move_the_centre(self):
+        """Otherwise re-running the grid would walk the centre off the molecule
+        each time, since every previous probe would vote."""
+        from nics_placer.dialog import _add_bq_atoms
+        from nics_placer.nics_math import center_of_mass
+
+        mol = _build("c1ccccc1")
+        before = center_of_mass(mol)
+        grown = _add_bq_atoms(mol, [np.array([40.0, 0.0, 0.0])])
+        np.testing.assert_allclose(center_of_mass(grown), before, atol=1e-9)
+
+
+class TestCenterOfMassDegenerate(unittest.TestCase):
+    class _Atom:
+        def __init__(self, idx, mass):
+            self._idx, self._mass = idx, mass
+
+        def GetIdx(self):
+            return self._idx
+
+        def GetMass(self):
+            return self._mass
+
+    class _Mol:
+        def __init__(self, coords, masses):
+            self._coords, self._masses = coords, masses
+
+        def GetConformer(self):
+            outer = self
+
+            class _Conf:
+                def GetAtomPosition(self, i):
+                    return outer._coords[i]
+
+            return _Conf()
+
+        def GetAtoms(self):
+            return [
+                TestCenterOfMassDegenerate._Atom(i, m)
+                for i, m in enumerate(self._masses)
+            ]
+
+    def test_massless_molecule_falls_back_to_the_geometric_centre(self):
+        from nics_placer.nics_math import center_of_mass
+
+        mol = self._Mol([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]], [0.0, 0.0])
+        np.testing.assert_allclose(center_of_mass(mol), [1.0, 0.0, 0.0])
+
+    def test_empty_molecule_returns_the_origin(self):
+        from nics_placer.nics_math import center_of_mass
+
+        np.testing.assert_allclose(center_of_mass(self._Mol([], [])), np.zeros(3))
+
+    def test_weighting_follows_the_masses(self):
+        from nics_placer.nics_math import center_of_mass
+
+        mol = self._Mol([[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]], [3.0, 1.0])
+        np.testing.assert_allclose(center_of_mass(mol), [1.0, 0.0, 0.0])
