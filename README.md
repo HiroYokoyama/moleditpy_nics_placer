@@ -3,7 +3,8 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20726104.svg)](https://doi.org/10.5281/zenodo.20726104)
 [![CI](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml/badge.svg)](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml)
 ![Test Coverage](https://img.shields.io/badge/coverage->90%25-green)
-[![Downloads](https://img.shields.io/github/downloads/HiroYokoyama/moleditpy_nics_placer/total)](https://github.com/HiroYokoyama/moleditpy_nics_placer/releases)
+[![GitHub tag](https://img.shields.io/github/v/tag/HiroYokoyama/moleditpy_nics_placer?label=version)](https://github.com/HiroYokoyama/moleditpy_nics_placer/tags)
+[![GitHub Downloads](https://img.shields.io/github/downloads/HiroYokoyama/moleditpy_nics_placer/total)](https://github.com/HiroYokoyama/moleditpy_nics_placer/releases)
 
 ![NICS Placer](img/main.png)
 
@@ -51,7 +52,6 @@ Two modes, one per menu entry:
 Lays down a whole lattice of probes so the shielding can be plotted as a surface or contoured as an isochemical-shielding surface (ICSS), rather than read off as three numbers per ring.
 
 ![NICS Grid dialog](img/main-grid.png)
-[![GitHub tag](https://img.shields.io/github/v/tag/HiroYokoyama/moleditpy_nics_placer?label=version)](https://github.com/HiroYokoyama/moleditpy_nics_placer/tags)
 
 *A 3D box over chrysene. Uniform spacing at 1.5 Å gives 9 × 9 × 5 points over ±6.00 / ±6.00 / ±3.00 Å — the counts follow the molecule's shape while the step stays identical on every axis. The green sphere marks the ring the frame is anchored to, and the offset is greyed out because a 3D box is already centred.*
 
