@@ -6,6 +6,8 @@
 [![GitHub tag](https://img.shields.io/github/v/tag/HiroYokoyama/moleditpy_nics_placer?label=version)](https://github.com/HiroYokoyama/moleditpy_nics_placer/tags)
 [![GitHub Downloads](https://img.shields.io/github/downloads/HiroYokoyama/moleditpy_nics_placer/total)](https://github.com/HiroYokoyama/moleditpy_nics_placer/releases)
 
+Repo: [https://github.com/HiroYokoyama/moleditpy_nics_placer/](https://github.com/HiroYokoyama/moleditpy_nics_placer/)
+
 ![NICS Placer](img/main.png)
 
 A [MoleditPy](https://github.com/HiroYokoyama/python_molecular_editor) plugin that detects rings in the loaded molecule and places ghost atoms at NICS (Nucleus-Independent Chemical Shift) probe positions for calculations with ORCA or Gaussian.
