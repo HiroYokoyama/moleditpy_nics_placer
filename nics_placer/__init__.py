@@ -1,12 +1,13 @@
 """
 MoleditPy NICS Placer Plugin
 =============================
-Detects rings in the loaded molecule and places Bq ghost atoms at
-NICS(0) and NICS(1) probe positions.
+Detects rings in the loaded molecule and places ghost atoms (Bq for Gaussian,
+H: for ORCA) at NICS(0) and NICS(1) probe positions.
 
 Uses the same ``custom_symbol`` atom property as the XYZ Editor, so ORCA
-Input Generator Pro automatically renders the Bq labels in the coordinate
-block without any additional configuration.
+Input Generator Pro (with H:) and Gaussian Input Generator Neo (with Bq)
+automatically render ghost labels in the coordinate block without any
+additional configuration.
 """
 
 import json
@@ -23,12 +24,13 @@ except Exception:  # ImportError or OS-level DLL crash
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "2.2.0"
+PLUGIN_VERSION = "2.2.1"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = (
-    "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions, "
-    "or as a 2D plane / 3D volume for NICS scans and ICSS maps. "
-    "Compatible with ORCA Input Generator Pro via the custom_symbol property."
+    "Detect rings and place ghost atoms (Bq for Gaussian, H: for ORCA) at "
+    "NICS(0)/NICS(1) probe positions, or as a 2D plane / 3D volume for NICS scans "
+    "and ICSS maps. Compatible with ORCA Input Generator Pro (H:) and Gaussian Input "
+    "Generator Neo (Bq) via the custom_symbol property."
 )
 PLUGIN_CATEGORY = "3D Edit"
 PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=3.0.0, <5.0.0"

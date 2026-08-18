@@ -41,13 +41,13 @@ Two modes, one per menu entry:
 
   | Symbol | Software |
   |--------|----------|
-  | `Bq` | Gaussian; also valid in ORCA (default) |
+  | `Bq` | Gaussian (default) |
   | `H:` | ORCA native ghost atom notation |
 
 - Table view with per-ring status (size, aromaticity, planarity, placed/staged count)
 - Helper buttons: Stage NICS(0) / Stage NICS(1)± for selected rings, Place All, Clear All, Refresh
 - **Auto-refresh** — when the molecule changes (load, undo/redo), rings and spheres update automatically
-- Compatible with **ORCA Input Generator Pro** and **Gaussian Input Generator Neo** via the shared `custom_symbol` atom property
+- Compatible with **ORCA Input Generator Pro** (using `H:`) and **Gaussian Input Generator Neo** (using `Bq`) via the shared `custom_symbol` atom property
 
 ### NICS Grid (2D, 3D)
 
@@ -89,9 +89,9 @@ Ring-frame grids follow the ring selected in the table — *u* is anchored to th
 2. Open **3D Edit → NICS Placer…**
 3. Yellow spheres appear at all NICS(0), NICS(1)+, and NICS(1)− positions for every ring.
 4. Click yellow spheres to stage them (turns red), or use the **Stage** buttons for bulk selection.
-5. Select ghost atom symbol (`Bq` or `H:`) from the combo box.
-6. Press **Apply (place red Bq)** to insert ghost atoms at all staged positions.
-7. Open **ORCA Input Generator Pro** or **Gaussian Input Generator Neo** — ghost labels appear automatically in the coordinate block.
+5. Select ghost atom symbol (`Bq` for Gaussian or `H:` for ORCA) from the combo box.
+6. Press **Apply (place red probes)** to insert ghost atoms at all staged positions.
+7. Open **ORCA Input Generator Pro** (with `H:`) or **Gaussian Input Generator Neo** (with `Bq`) — ghost labels appear automatically in the coordinate block.
 8. Run NICS calculation.
 
 ### Grid workflow
@@ -188,11 +188,11 @@ Each ring reports the RMS displacement of its atoms from its own best-fit plane.
 
 ### Ghost atom convention
 
-Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp("custom_symbol", symbol)`. The `custom_symbol` property is the shared convention used by MoleditPy's XYZ Editor, ORCA Input Generator Pro, and Gaussian Input Generator Neo.
+Ghost atoms are `rdkit.Chem.Atom(0)` (atomic number 0, dummy atom) with `SetProp("custom_symbol", symbol)`. The `custom_symbol` property is the shared convention used by MoleditPy's XYZ Editor, ORCA Input Generator Pro (`H:`), and Gaussian Input Generator Neo (`Bq`).
 
 ## Version
 
-2.2.0 — HiroYokoyama
+2.2.1 — HiroYokoyama
 
 ## License & Disclaimer
 

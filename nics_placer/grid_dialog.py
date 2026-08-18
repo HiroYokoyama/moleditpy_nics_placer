@@ -1,5 +1,5 @@
 """
-NicsGridDialog — place a sheet or a volume of Bq probes for a NICS scan.
+NicsGridDialog — place a sheet or a volume of NICS probes for a NICS scan.
 
 Where the main NICS Placer dialog puts three probes per ring, this one lays
 down an N x N plane (2D) or an N x N x M box (3D) so the shielding can be
@@ -17,11 +17,11 @@ By default the grid is centred on the molecular centre of mass; unchecking
 that falls back to the ring centroid (ring frame) or the heavy-atom bounding
 box (lab frame).
 
-Every probe is an ordinary Bq ghost atom, so the result drops straight into
-ORCA Input Generator Pro or a Gaussian NMR job exactly like the single-point
-probes do. Grids get large fast: N=21 is 441 atoms, and NMR cost grows with
-the number of centres, so the point count is shown live and confirmed above a
-threshold.
+Every probe is an ordinary ghost atom (Bq for Gaussian, H: for ORCA), so the
+result drops straight into ORCA Input Generator Pro (with H:) or Gaussian Input
+Generator Neo (with Bq) exactly like the single-point probes do. Grids get
+large fast: N=21 is 441 atoms, and NMR cost grows with the number of centres,
+so the point count is shown live and confirmed above a threshold.
 """
 
 import logging
@@ -269,8 +269,11 @@ class NicsGridDialog(QDialog):
         output_form = QFormLayout(output_group)
 
         self._sym_combo = QComboBox()
-        self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
+        self._sym_combo.addItem("Bq  (Gaussian)", "Bq")
         self._sym_combo.addItem("H:  (ORCA native)", "H:")
+        self._sym_combo.setToolTip(
+            "Select ghost atom symbol: 'Bq' for Gaussian, 'H:' for ORCA."
+        )
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         output_form.addRow("Ghost atom label:", self._sym_combo)
 
@@ -299,7 +302,7 @@ class NicsGridDialog(QDialog):
         self._btn_place.clicked.connect(self._place_grid)
         row.addWidget(self._btn_place)
 
-        btn_clear = QPushButton("Clear All Bq")
+        btn_clear = QPushButton("Clear All Probes")
         btn_clear.clicked.connect(self._clear_all_bq)
         row.addWidget(btn_clear)
 

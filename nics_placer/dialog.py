@@ -1,5 +1,5 @@
 """
-NicsPlacerDialog — ring detection, NICS probe visualisation, and Bq placement.
+NicsPlacerDialog — ring detection, NICS probe visualisation, and ghost atom placement.
 
 Sphere colours:
   Yellow (semi-transparent) = unselected probe position
@@ -13,10 +13,10 @@ Workflow:
      OR press "Place All"  → stages + places everything in one shot
 
 Ghost atom symbol options:
-  Bq  — Gaussian convention; also valid in ORCA (recognised by ORCA Input Generator Pro)
+  Bq  — Gaussian convention
   H:  — ORCA native ghost atom notation
 
-The 'custom_symbol' atom property is shared with XYZ Editor and ORCA Input Generator Pro.
+The 'custom_symbol' atom property is shared with XYZ Editor, Gaussian Input Generator Neo, and ORCA Input Generator Pro.
 """
 
 import logging
@@ -157,7 +157,7 @@ _STATE_PLACED = "placed"  # green  — Bq atom exists in molecule
 
 class NicsPlacerDialog(QDialog):
     """
-    Dialog for visualising and placing Bq atoms at NICS probe positions.
+    Dialog for visualising and placing ghost atoms (Bq for Gaussian, H: for ORCA) at NICS probe positions.
 
     Each NICS point has one of three states:
       unset   → yellow sphere (click to stage)
@@ -208,8 +208,11 @@ class NicsPlacerDialog(QDialog):
         sym_row = QHBoxLayout()
         sym_row.addWidget(QLabel("Ghost atom label:"))
         self._sym_combo = QComboBox()
-        self._sym_combo.addItem("Bq  (Gaussian / ORCA)", "Bq")
+        self._sym_combo.addItem("Bq  (Gaussian)", "Bq")
         self._sym_combo.addItem("H:  (ORCA native)", "H:")
+        self._sym_combo.setToolTip(
+            "Select ghost atom symbol: 'Bq' for Gaussian, 'H:' for ORCA."
+        )
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         sym_row.addWidget(self._sym_combo)
 
@@ -258,7 +261,7 @@ class NicsPlacerDialog(QDialog):
         # Row 2: Apply / bulk / clear
         row2 = QHBoxLayout()
 
-        self._btn_apply = QPushButton("Apply  (place red Bq)")
+        self._btn_apply = QPushButton("Apply  (place red probes)")
         self._btn_apply.setStyleSheet("font-weight:bold; padding:6px;")
         self._btn_apply.clicked.connect(self._apply_staged)
         row2.addWidget(self._btn_apply)
@@ -267,7 +270,7 @@ class NicsPlacerDialog(QDialog):
         btn_place_all.clicked.connect(self._place_all)
         row2.addWidget(btn_place_all)
 
-        btn_clear = QPushButton("Clear All Bq")
+        btn_clear = QPushButton("Clear All Probes")
         btn_clear.clicked.connect(self._clear_all_bq)
         row2.addWidget(btn_clear)
 
@@ -358,7 +361,7 @@ class NicsPlacerDialog(QDialog):
         self._render_spheres()
 
     def _sync_placed_status(self):
-        """Mark points whose Bq atom already exists in the molecule as placed."""
+        """Mark points whose ghost atom already exists in the molecule as placed."""
         mol = self._context.current_molecule
         if not mol or not mol.GetNumConformers():
             return
