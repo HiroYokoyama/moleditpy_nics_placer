@@ -235,6 +235,18 @@ class NicsPlacerDialog(QDialog):
         sym_row.addStretch()
         layout.addLayout(sym_row)
 
+        # An ORCA "H:" ghost carries the full hydrogen basis, which perturbs
+        # the shielding it is placed to measure; ORCA Input Generator Pro can
+        # strip it, but only if asked.
+        self._orca_hint = QLabel(
+            "ORCA: an 'H:' ghost keeps a full hydrogen basis. For a clean NICS "
+            "probe, set it to 'Bare' in the Ghost Atoms box of ORCA Input "
+            "Generator Pro (v3.8.0+)."
+        )
+        self._orca_hint.setWordWrap(True)
+        self._orca_hint.setStyleSheet("color: #b26b00; font-weight: bold;")
+        layout.addWidget(self._orca_hint)
+
         self._table = QTableWidget()
         self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(
@@ -562,6 +574,7 @@ class NicsPlacerDialog(QDialog):
             self._sym_combo.setCurrentIndex(idx)
             self._sym_combo.blockSignals(False)
         self._ghost_symbol = sym
+        self._update_orca_hint()
 
     def _on_height_changed(self, _value):
         """Recompute the probes at the new height.
@@ -572,8 +585,12 @@ class NicsPlacerDialog(QDialog):
         """
         self._load_rings()
 
+    def _update_orca_hint(self):
+        self._orca_hint.setVisible(self._ghost_symbol == "H:")
+
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()
+        self._update_orca_hint()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
         _save_plugin_settings(_plugin_settings)
         self._retag_placed_atoms(self._ghost_symbol)
