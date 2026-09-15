@@ -277,6 +277,18 @@ class NicsGridDialog(QDialog):
         self._sym_combo.currentIndexChanged.connect(self._on_symbol_changed)
         output_form.addRow("Ghost atom label:", self._sym_combo)
 
+        # An ORCA "H:" ghost carries the full hydrogen basis, which perturbs
+        # the shielding it is placed to measure -- and a grid places hundreds
+        # of them.  ORCA Input Generator Pro can strip it, but only if asked.
+        self._orca_hint = QLabel(
+            "ORCA: an 'H:' ghost keeps a full hydrogen basis. For clean NICS "
+            "probes, set it to 'Bare' in the Ghost Atoms box of ORCA Input "
+            "Generator Pro (v3.8.0+)."
+        )
+        self._orca_hint.setWordWrap(True)
+        self._orca_hint.setStyleSheet("color: #b26b00; font-weight: bold;")
+        output_form.addRow(self._orca_hint)
+
         confirm_row = QHBoxLayout()
         self._confirm_spin = QSpinBox()
         self._confirm_spin.setRange(0, 100000)
@@ -479,8 +491,12 @@ class NicsGridDialog(QDialog):
         self._refresh_axis_rows()
         self._on_params_changed()
 
+    def _update_orca_hint(self):
+        self._orca_hint.setVisible(self._ghost_symbol == "H:")
+
     def _on_symbol_changed(self, _index):
         self._ghost_symbol = self._sym_combo.currentData()
+        self._update_orca_hint()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
         _save_plugin_settings(_plugin_settings)
 
@@ -766,6 +782,7 @@ class NicsGridDialog(QDialog):
             self._sym_combo.setCurrentIndex(idx)
             self._sym_combo.blockSignals(False)
         self._ghost_symbol = sym if sym in _GHOST_SYMBOLS else "Bq"
+        self._update_orca_hint()
 
     def showEvent(self, event):
         super().showEvent(event)

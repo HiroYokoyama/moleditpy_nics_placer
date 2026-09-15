@@ -126,6 +126,38 @@ def _reset_msgbox():
 
 
 # ---------------------------------------------------------------------------
+# ORCA ghost-basis hint
+# ---------------------------------------------------------------------------
+
+
+@needs_dialog
+def test_orca_hint_hidden_for_gaussian_bq():
+    """Bq carries no basis in Gaussian, so the warning would be noise."""
+    dlg = _dialog()
+    dlg._ghost_symbol = "Bq"
+    dlg._update_orca_hint()
+    dlg._orca_hint.setVisible.assert_called_with(False)
+
+
+@needs_dialog
+def test_orca_hint_shown_for_orca_ghost():
+    """A grid places hundreds of H: ghosts, each with a full H basis."""
+    dlg = _dialog()
+    dlg._ghost_symbol = "H:"
+    dlg._update_orca_hint()
+    dlg._orca_hint.setVisible.assert_called_with(True)
+
+
+@needs_dialog
+def test_orca_hint_follows_the_symbol_combo():
+    dlg = _dialog()
+    dlg._sym_combo.currentData = lambda: "H:"
+    dlg._on_symbol_changed(1)
+    assert dlg._ghost_symbol == "H:"
+    dlg._orca_hint.setVisible.assert_called_with(True)
+
+
+# ---------------------------------------------------------------------------
 # Construction and ring table
 # ---------------------------------------------------------------------------
 
