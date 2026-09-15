@@ -240,8 +240,8 @@ class NicsPlacerDialog(QDialog):
         # strip it, but only if asked.
         self._orca_hint = QLabel(
             "ORCA: an 'H:' ghost keeps a full hydrogen basis. For a clean NICS "
-            "probe, set it to 'Bare' in the Ghost Atoms box of ORCA Input "
-            "Generator Pro (v3.8.0+)."
+            "probe, set it to 'Bare' in the Per-atom Basis box of ORCA Input "
+            "Generator Pro (v3.9.0+)."
         )
         self._orca_hint.setWordWrap(True)
         self._orca_hint.setStyleSheet("color: #b26b00; font-weight: bold;")

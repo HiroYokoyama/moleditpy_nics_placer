@@ -24,7 +24,7 @@ except Exception:  # ImportError or OS-level DLL crash
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "2.3.0"
+PLUGIN_VERSION = "2.3.1"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = (
     "Detect rings and place ghost atoms (Bq for Gaussian, H: for ORCA) at "
