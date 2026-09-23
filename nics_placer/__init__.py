@@ -24,14 +24,9 @@ except Exception:  # ImportError or OS-level DLL crash
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "2.3.1"
+PLUGIN_VERSION = "2.3.2"
 PLUGIN_AUTHOR = "HiroYokoyama"
-PLUGIN_DESCRIPTION = (
-    "Detect rings and place ghost atoms (Bq for Gaussian, H: for ORCA) at "
-    "NICS(0)/NICS(1) probe positions, or as a 2D plane / 3D volume for NICS scans "
-    "and ICSS maps. Compatible with ORCA Input Generator Pro (H:) and Gaussian Input "
-    "Generator Neo (Bq) via the custom_symbol property."
-)
+PLUGIN_DESCRIPTION = "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. Compatible with ORCA Input Generator Pro via the custom_symbol property."
 PLUGIN_CATEGORY = "3D Edit"
 PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=3.0.0, <5.0.0"
 
