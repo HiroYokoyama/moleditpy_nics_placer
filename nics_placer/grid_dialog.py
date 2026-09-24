@@ -50,6 +50,12 @@ import pyvista as pv
 
 from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
 from .dialog import _GHOST_SYMBOLS, _add_bq_atoms, _remove_all_bq
+from .ghosts import (
+    MoleculeWatcher,
+    new_probe_positions,
+    retag_dummy_atoms,
+    sync_other_windows,
+)
 from .nics_math import (
     GRID_PLANE_LABELS,
     GRID_PLANES,
@@ -109,6 +115,14 @@ class NicsGridDialog(QDialog):
         self._rings: list = []
         self._grid_points: list = []
         self._ghost_symbol: str = _plugin_settings.get("ghost_symbol", "Bq")
+        # The ring table holds atom indices into the molecule it was read
+        # from. Without watching for a new molecule (or atoms moved in place)
+        # the grid would stay anchored to whatever atoms now carry those
+        # indices.
+        self._watcher = MoleculeWatcher(context.current_molecule)
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(500)
+        self._poll_timer.timeout.connect(self._check_molecule_changed)
         self._setup_ui()
 
     # ------------------------------------------------------------------
@@ -499,6 +513,13 @@ class NicsGridDialog(QDialog):
         self._update_orca_hint()
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
         _save_plugin_settings(_plugin_settings)
+        # One label per molecule: relabel the probes already placed and tell
+        # the NICS Placer window, or the next placement mixes Bq and H:.
+        mol = self._context.current_molecule
+        if mol and retag_dummy_atoms(mol, self._ghost_symbol):
+            self._context.current_molecule = mol
+            self._context.push_undo_checkpoint()
+        sync_other_windows(self._context, self)
 
     def _on_params_changed(self, *_args):
         self._rebuild_grid()
@@ -560,8 +581,10 @@ class NicsGridDialog(QDialog):
                 row["e"].blockSignals(False)
             extents = [row["e"].value() for row in self._axis_rows]
 
+            clamped = False
             if self._uniform_spacing.isChecked():
                 counts = list(counts_for_spacing(extents, self._spacing_spin.value()))
+                wanted = counts[:n_axes]
                 for row, value in zip(self._axis_rows, counts):
                     row["n"].blockSignals(True)
                     row["n"].setValue(value)
@@ -570,6 +593,9 @@ class NicsGridDialog(QDialog):
                     # widget actually holds so the label cannot claim a count
                     # the grid does not have.
                 counts = [row["n"].value() for row in self._axis_rows]
+                # A capped axis gets a longer step than the one asked for,
+                # so the cells are no longer cubic. Say so.
+                clamped = counts[:n_axes] != wanted
             else:
                 counts = [row["n"].value() for row in self._axis_rows]
 
@@ -623,6 +649,12 @@ class NicsGridDialog(QDialog):
             f"over +/-{extents[k]:.2f} A"
             for k in range(n_axes)
         )
+        if clamped:
+            warn += (
+                "<br><b style='color:red'>Point count capped at the per-axis "
+                "maximum, so the step is not uniform.</b> Increase the step or "
+                "reduce the half-widths."
+            )
         self._count_label.setText(
             f"{shape} = <b>{total}</b> probes &mdash; {detail}.{warn}"
         )
@@ -635,9 +667,19 @@ class NicsGridDialog(QDialog):
     # Rings
     # ------------------------------------------------------------------
 
+    def _check_molecule_changed(self):
+        try:
+            if self._watcher.changed(self._context.current_molecule):
+                self._reload()
+        except Exception as _e:
+            logging.warning("[grid_dialog.py] _check_molecule_changed: %s", _e)
+
     def _reload(self):
         mol = self._context.current_molecule
+        self._watcher.reset(mol)
         self._rings = get_rings(mol) if mol and mol.GetNumConformers() else []
+        if self._table.selectedIndexes() and self._selected_ring() >= len(self._rings):
+            self._table.clearSelection()
         self._table.setRowCount(len(self._rings))
         for i, ring in enumerate(self._rings):
             planarity = ""
@@ -754,12 +796,21 @@ class NicsGridDialog(QDialog):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-        positions = [p["pos"] for p in self._grid_points]
-        self._context.current_molecule = _add_bq_atoms(
-            mol, positions, symbol=self._ghost_symbol
+        # Skip points that already hold a ghost: pressing Place Grid twice, or
+        # a grid point landing on a NICS(0) probe, would otherwise stack two
+        # ghosts on one spot.
+        positions, skipped = new_probe_positions(
+            mol, [p["pos"] for p in self._grid_points]
         )
-        self._context.push_undo_checkpoint()
-        self._context.show_status_message(f"Placed {total} NICS grid probes.", 3000)
+        if positions:
+            self._context.current_molecule = _add_bq_atoms(
+                mol, positions, symbol=self._ghost_symbol
+            )
+            self._context.push_undo_checkpoint()
+        msg = f"Placed {len(positions)} NICS grid probes."
+        if skipped:
+            msg += f" {skipped} already had a ghost atom there and were skipped."
+        self._context.show_status_message(msg, 4000)
         QTimer.singleShot(150, self._render_spheres)
 
     def _clear_all_bq(self):
@@ -790,7 +841,10 @@ class NicsGridDialog(QDialog):
         self._on_mode_changed(self._mode_combo.currentIndex())
         self._on_plane_changed(self._plane_combo.currentIndex())
         self._reload()
+        if not self._poll_timer.isActive():
+            self._poll_timer.start()
 
     def closeEvent(self, event):
+        self._poll_timer.stop()
         self._clear_actors()
         super().closeEvent(event)

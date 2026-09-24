@@ -24,7 +24,7 @@ except Exception:  # ImportError or OS-level DLL crash
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "2.3.2"
+PLUGIN_VERSION = "2.4.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. Compatible with ORCA Input Generator Pro via the custom_symbol property."
 PLUGIN_CATEGORY = "3D Edit"
@@ -168,12 +168,16 @@ def initialize(context):
         sym = data.get("ghost_symbol")
         if sym in _GHOST_SYMBOLS:
             _plugin_settings["ghost_symbol"] = sym
-            win = context.get_window("main_panel")
-            if win and hasattr(win, "sync_symbol_from_settings"):
-                try:
-                    win.sync_symbol_from_settings()
-                except Exception as _e:
-                    logging.warning("[nics_placer/__init__.py] sync combo: %s", _e)
+            # Both windows place probes, so both must pick up the label.
+            for key in ("main_panel", "grid_panel"):
+                win = context.get_window(key)
+                if win and hasattr(win, "sync_symbol_from_settings"):
+                    try:
+                        win.sync_symbol_from_settings()
+                    except Exception as _e:
+                        logging.warning(
+                            "[nics_placer/__init__.py] sync combo: %s", _e
+                        )
         # Restore ghost atom labels onto molecule.
         # IMPORTANT: the app fires load handlers BEFORE restoring the 3D molecule,
         # so context.current_molecule is None at this point.  We defer the actual

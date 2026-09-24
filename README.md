@@ -46,7 +46,10 @@ Two modes, one per menu entry:
 
 - Table view with per-ring status (size, aromaticity, planarity, placed/staged count)
 - Helper buttons: Stage NICS(0) / Stage NICS(1)± for selected rings, Place All, Clear All, Refresh
-- **Auto-refresh** — when the molecule changes (load, undo/redo), rings and spheres update automatically
+- **Auto-refresh** — when the molecule changes (load, undo/redo, or atoms moved in place by dragging, alignment or optimisation), rings and spheres update automatically. The NICS Grid window follows the molecule the same way.
+- **One ghost label per molecule** — changing the label in either window relabels the probes already placed and updates the other window, so `Bq` and `H:` never end up mixed in one input
+- **No stacked probes** — a probe whose position already holds a ghost atom (pressing Place Grid twice, or a grid point on a NICS(0) probe) is skipped rather than duplicated
+- **Other ghost atoms are reported** — ghosts that match none of the current probe positions (from an earlier probe height, a grid, or another tool) are counted in a notice, since they are not drawn
 - Compatible with **ORCA Input Generator Pro** (using `H:`) and **Gaussian Input Generator Neo** (using `Bq`) via the shared `custom_symbol` atom property
 
 ### NICS Grid (2D, 3D)

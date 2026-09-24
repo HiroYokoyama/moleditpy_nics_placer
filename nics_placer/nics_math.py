@@ -113,7 +113,7 @@ def molecular_reference_normal(mol) -> np.ndarray:
     atoms keeps a flexible side chain from tilting the reference away from the
     ring system it is supposed to describe.
     """
-    ring_atoms = sorted({i for r in mol.GetRingInfo().AtomRings() for i in r})
+    ring_atoms = sorted({i for r in _atom_rings(mol) for i in r})
     if len(ring_atoms) < 3:
         return np.array([0.0, 0.0, 1.0])
     pts = get_ring_positions(mol, tuple(ring_atoms))
@@ -147,12 +147,31 @@ def get_rings(mol) -> list:
         return []
 
     arom_mol = _reperceived_aromaticity(mol)
-    ring_info = mol.GetRingInfo()
     rings = []
-    for atom_ring in ring_info.AtomRings():
+    for atom_ring in _atom_rings(mol):
         is_aromatic = all(arom_mol.GetAtomWithIdx(i).GetIsAromatic() for i in atom_ring)
         rings.append({"atoms": tuple(atom_ring), "is_aromatic": is_aromatic})
     return rings
+
+
+def _atom_rings(mol) -> tuple:
+    """The molecule's rings, perceived afresh on a copy.
+
+    The ring table on the molecule itself is only filled in by sanitisation.
+    A molecule RDKit cannot sanitise (a hypervalent sketch, an odd charge
+    state) comes back with an empty table, which would read as "no rings" and
+    leave the dialogs blank with no reason given. Perceiving on a copy works
+    either way and leaves the caller's molecule untouched.
+    """
+    try:
+        from rdkit import Chem
+    except ImportError:  # pragma: no cover - rdkit absent only in unit stubs
+        return tuple(mol.GetRingInfo().AtomRings())
+    try:
+        copy = Chem.Mol(mol)
+        return tuple(tuple(r) for r in Chem.GetSymmSSSR(copy))
+    except Exception:
+        return tuple(mol.GetRingInfo().AtomRings())
 
 
 def _reperceived_aromaticity(mol):
@@ -173,6 +192,9 @@ def _reperceived_aromaticity(mol):
         return mol
     try:
         copy = Chem.Mol(mol)
+        # Aromaticity perception needs the ring table, which an unsanitised
+        # molecule does not have.
+        Chem.GetSymmSSSR(copy)
         Chem.SetAromaticity(copy, Chem.AromaticityModel.AROMATICITY_RDKIT)
         return copy
     except Exception:

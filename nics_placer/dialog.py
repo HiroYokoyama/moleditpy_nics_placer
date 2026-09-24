@@ -36,11 +36,19 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
 )
-from rdkit import Chem
-from rdkit.Geometry import Point3D
 import pyvista as pv
 
 from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
+from .ghosts import (
+    GHOST_SYMBOLS,
+    MoleculeWatcher,
+    add_ghost_atoms,
+    ghost_positions,
+    new_probe_positions,
+    remove_ghost_atoms,
+    retag_dummy_atoms,
+    sync_other_windows,
+)
 from .nics_math import (
     NICS1_HEIGHT,
     PLANARITY_TOLERANCE,
@@ -50,7 +58,7 @@ from .nics_math import (
     molecular_reference_normal,
 )
 
-_GHOST_SYMBOLS = ("Bq", "H:")  # all recognised ghost atom labels
+_GHOST_SYMBOLS = GHOST_SYMBOLS  # all recognised ghost atom labels
 _PICK_DIST_SQ = 1.0  # Å² snap threshold
 _SPHERE_RADIUS = 0.25
 _GREEN_SPHERE_RADIUS = 0.50  # > 0.3 × H VDW (1.2 Å) so placed spheres stay visible
@@ -91,59 +99,14 @@ class _ClickFilter(QObject):
 # ---------------------------------------------------------------------------
 
 
-def _add_bq_atoms(mol, positions, symbol: str = "Bq"):
-    """Return a new Mol with a ghost dummy atom appended at each of *positions*.
-
-    Batched deliberately: rebuilding the conformer once per atom makes placing
-    a grid quadratic in the number of probes, and a 3D volume can run to
-    thousands.
-    """
-    positions = list(positions)
-    rw = Chem.RWMol(mol)
-    new_idx = []
-    for _p in positions:
-        atom = Chem.Atom(0)
-        atom.SetProp("custom_symbol", symbol)
-        new_idx.append(rw.AddAtom(atom))
-
-    old_conf = mol.GetConformer()
-    new_conf = Chem.Conformer(rw.GetNumAtoms())
-    for i in range(mol.GetNumAtoms()):
-        p = old_conf.GetAtomPosition(i)
-        new_conf.SetAtomPosition(i, Point3D(p.x, p.y, p.z))
-    for idx, pos in zip(new_idx, positions):
-        new_conf.SetAtomPosition(
-            idx, Point3D(float(pos[0]), float(pos[1]), float(pos[2]))
-        )
-    rw.RemoveAllConformers()
-    rw.AddConformer(new_conf)
-    try:
-        Chem.SanitizeMol(rw)
-    except Exception:
-        rw.UpdatePropertyCache(strict=False)
-    return rw.GetMol()
+# Kept under their old names: the grid window and the tests import them.
+_add_bq_atoms = add_ghost_atoms
+_remove_all_bq = remove_ghost_atoms
 
 
 def _add_bq_atom(mol, position: np.ndarray, symbol: str = "Bq"):
     """Return a new Mol with a ghost dummy atom appended at *position*."""
-    return _add_bq_atoms(mol, [position], symbol=symbol)
-
-
-def _remove_all_bq(mol):
-    """Return a new Mol with every Bq / H: ghost atom removed."""
-    rw = Chem.RWMol(mol)
-    to_remove = [
-        a.GetIdx()
-        for a in rw.GetAtoms()
-        if a.HasProp("custom_symbol") and a.GetProp("custom_symbol") in _GHOST_SYMBOLS
-    ]
-    for idx in sorted(to_remove, reverse=True):
-        rw.RemoveAtom(idx)
-    try:
-        Chem.SanitizeMol(rw)
-    except Exception:
-        rw.UpdatePropertyCache(strict=False)
-    return rw.GetMol()
+    return add_ghost_atoms(mol, [position], symbol=symbol)
 
 
 # ---------------------------------------------------------------------------
@@ -181,8 +144,9 @@ class NicsPlacerDialog(QDialog):
         self._actor_yellow = None
         self._actor_red = None
         self._actor_green = None
-        # Molecule-change detection (poll id() every 500 ms)
-        self._last_mol_id: int = id(context.current_molecule)
+        # Molecule-change detection, polled every 500 ms. Watches coordinates
+        # as well as identity: the host moves atoms in place.
+        self._watcher = MoleculeWatcher(context.current_molecule)
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(500)
         self._poll_timer.timeout.connect(self._check_molecule_changed)
@@ -247,6 +211,15 @@ class NicsPlacerDialog(QDialog):
         self._orca_hint.setStyleSheet("color: #b26b00; font-weight: bold;")
         layout.addWidget(self._orca_hint)
 
+        # Ghosts that match none of the current probe positions: probes from
+        # an earlier height, grid probes, or ghosts from another tool. They
+        # are not drawn, so without this line they would be invisible.
+        self._other_ghosts_label = QLabel()
+        self._other_ghosts_label.setWordWrap(True)
+        self._other_ghosts_label.setStyleSheet("color: #b26b00;")
+        self._other_ghosts_label.setVisible(False)
+        layout.addWidget(self._other_ghosts_label)
+
         self._table = QTableWidget()
         self._table.setColumnCount(5)
         self._table.setHorizontalHeaderLabels(
@@ -307,6 +280,7 @@ class NicsPlacerDialog(QDialog):
         self._table.setRowCount(0)
 
         if not mol or not mol.GetNumConformers():
+            self._show_other_ghosts(0)
             self._render_spheres()
             return
 
@@ -377,23 +351,31 @@ class NicsPlacerDialog(QDialog):
         mol = self._context.current_molecule
         if not mol or not mol.GetNumConformers():
             return
-        conf = mol.GetConformer()
-        bq_pos = []
-        for atom in mol.GetAtoms():
-            if (
-                atom.HasProp("custom_symbol")
-                and atom.GetProp("custom_symbol") in _GHOST_SYMBOLS
-            ):
-                p = conf.GetAtomPosition(atom.GetIdx())
-                bq_pos.append(np.array([p.x, p.y, p.z]))
-
+        bq_pos = ghost_positions(mol)
+        matched = np.zeros(len(bq_pos), dtype=bool)
         for pt in self._nics_points:
-            for bp in bq_pos:
-                if np.sum((pt["pos"] - bp) ** 2) < 0.01:
-                    pt["state"] = _STATE_PLACED
-                    break
+            if not len(bq_pos):
+                break
+            hits = ((bq_pos - pt["pos"]) ** 2).sum(axis=1) < 0.01
+            if hits.any():
+                pt["state"] = _STATE_PLACED
+                matched |= hits
 
+        self._show_other_ghosts(int((~matched).sum()))
         self._update_table_status()
+
+    def _show_other_ghosts(self, n_other: int):
+        """Report ghosts that sit at none of the current probe positions."""
+        if n_other <= 0:
+            self._other_ghosts_label.setVisible(False)
+            return
+        plural = "s" if n_other != 1 else ""
+        self._other_ghosts_label.setText(
+            f"{n_other} other ghost atom{plural} in the molecule (from another "
+            "probe height, a grid, or another tool). They are not shown here; "
+            "Clear All Probes removes them too."
+        )
+        self._other_ghosts_label.setVisible(True)
 
     def _update_table_status(self):
         for ring_idx in range(self._table.rowCount()):
@@ -581,7 +563,8 @@ class NicsPlacerDialog(QDialog):
 
         Points already committed as ghost atoms are left where they are — the
         molecule is the record of what was placed, and silently moving atoms
-        under the user would be worse than a stale green sphere.
+        under the user would be worse. They no longer match a probe, so the
+        "other ghost atoms" line reports them instead.
         """
         self._load_rings()
 
@@ -594,24 +577,16 @@ class NicsPlacerDialog(QDialog):
         _plugin_settings["ghost_symbol"] = self._ghost_symbol
         _save_plugin_settings(_plugin_settings)
         self._retag_placed_atoms(self._ghost_symbol)
+        # The grid window places with the same label; left on the old one it
+        # would add Bq probes to an H: molecule (or the reverse).
+        sync_other_windows(self._context, self)
 
     def _retag_placed_atoms(self, new_symbol: str):
         """Relabel all atomic-num-0 atoms in the molecule to *new_symbol*."""
         mol = self._context.current_molecule
         if not mol:
             return
-        changed = False
-        for atom in mol.GetAtoms():
-            if atom.GetAtomicNum() == 0:
-                old = (
-                    atom.GetProp("custom_symbol")
-                    if atom.HasProp("custom_symbol")
-                    else None
-                )
-                if old != new_symbol:
-                    atom.SetProp("custom_symbol", new_symbol)
-                    changed = True
-        if changed:
+        if retag_dummy_atoms(mol, new_symbol):
             self._context.current_molecule = mol
             self._context.push_undo_checkpoint()
 
@@ -651,11 +626,21 @@ class NicsPlacerDialog(QDialog):
         mol = self._context.current_molecule
         if not mol:
             return
+        # A probe whose spot already holds a ghost (a grid point on the ring
+        # centre, say) is marked placed without adding a second copy.
+        to_place, skipped = new_probe_positions(mol, [pt["pos"] for pt in staged])
         for pt in staged:
-            mol = _add_bq_atom(mol, pt["pos"], symbol=self._ghost_symbol)
             pt["state"] = _STATE_PLACED
-        self._context.current_molecule = mol
-        self._context.push_undo_checkpoint()
+        if to_place:
+            self._context.current_molecule = _add_bq_atoms(
+                mol, to_place, symbol=self._ghost_symbol
+            )
+            self._context.push_undo_checkpoint()
+        if skipped:
+            self._context.show_status_message(
+                f"{skipped} probe(s) already had a ghost atom there; not duplicated.",
+                4000,
+            )
         self._update_table_status()
         QTimer.singleShot(150, self._render_spheres)
 
@@ -685,10 +670,7 @@ class NicsPlacerDialog(QDialog):
 
     def _check_molecule_changed(self):
         try:
-            mol = self._context.current_molecule
-            mol_id = id(mol)
-            if mol_id != self._last_mol_id:
-                self._last_mol_id = mol_id
+            if self._watcher.changed(self._context.current_molecule):
                 self._load_rings()
         except Exception as _e:
             logging.warning("[dialog.py] _check_molecule_changed: %s", _e)
@@ -721,7 +703,7 @@ class NicsPlacerDialog(QDialog):
         # Retag any bare * atoms (post-optimisation) to the current ghost label
         self._retag_bare_dummy_atoms()
         # Re-initialise after being hidden (e.g. closed then re-opened via registry)
-        self._last_mol_id = id(self._context.current_molecule)
+        self._watcher.reset(self._context.current_molecule)
         self._load_rings()
         self._enable_picking()
         if not self._poll_timer.isActive():
