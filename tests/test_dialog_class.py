@@ -91,7 +91,8 @@ class _FakeVtkModule:
 
 
 @pytest.fixture
-def fake_vtk():
+def fake_vtk(monkeypatch):
+    monkeypatch.setattr(dialog_mod, "vtk", _FakeVtkModule)
     saved = sys.modules.get("vtk")
     sys.modules["vtk"] = _FakeVtkModule
     yield _FakeVtkModule

@@ -71,6 +71,8 @@ def new_probe_positions(mol, positions) -> tuple:
     kept, skipped = [], 0
     for p in positions:
         p = np.asarray(p, dtype=float)
+        if p.shape != (3,) or not np.isfinite(p).all():
+            raise ValueError("Probe coordinates must be finite 3-vectors")
         if _near(p):
             skipped += 1
             continue
@@ -102,7 +104,11 @@ def add_ghost_atoms(mol, positions, symbol: str = "Bq"):
     a grid quadratic in the number of probes, and a 3D volume can run to
     thousands.
     """
-    positions = list(positions)
+    if symbol not in GHOST_SYMBOLS:
+        raise ValueError("Unknown ghost symbol: " + symbol)
+    positions = [np.asarray(pos, dtype=float) for pos in positions]
+    if any(pos.shape != (3,) or not np.isfinite(pos).all() for pos in positions):
+        raise ValueError("Probe coordinates must be finite 3-vectors")
     rw = Chem.RWMol(mol)
     new_idx = []
     for _p in positions:
@@ -110,17 +116,13 @@ def add_ghost_atoms(mol, positions, symbol: str = "Bq"):
         atom.SetProp("custom_symbol", symbol)
         new_idx.append(rw.AddAtom(atom))
 
-    old_conf = mol.GetConformer()
-    new_conf = Chem.Conformer(rw.GetNumAtoms())
-    for i in range(mol.GetNumAtoms()):
-        p = old_conf.GetAtomPosition(i)
-        new_conf.SetAtomPosition(i, Point3D(p.x, p.y, p.z))
-    for idx, pos in zip(new_idx, positions):
-        new_conf.SetAtomPosition(
-            idx, Point3D(float(pos[0]), float(pos[1]), float(pos[2]))
-        )
-    rw.RemoveAllConformers()
-    rw.AddConformer(new_conf)
+    # RWMol extends existing conformers when atoms are appended. Keep their
+    # original positions, IDs, dimensionality flags and properties.
+    if not rw.GetNumConformers():
+        raise ValueError("A conformer is required to place probes")
+    for conf in rw.GetConformers():
+        for idx, pos in zip(new_idx, positions):
+            conf.SetAtomPosition(idx, Point3D(*map(float, pos)))
     return _finish(rw)
 
 
@@ -159,9 +161,28 @@ def molecule_signature(mol):
     """
     if mol is None:
         return None
-    if not mol.GetNumConformers():
-        return (mol.GetNumAtoms(), None)
-    return (mol.GetNumAtoms(), mol.GetConformer().GetPositions().tobytes())
+    atoms = tuple(
+        (
+            a.GetAtomicNum(),
+            a.GetIsotope(),
+            a.GetFormalCharge(),
+            a.GetProp("custom_symbol") if a.HasProp("custom_symbol") else None,
+        )
+        for a in mol.GetAtoms()
+    )
+    bonds = tuple(
+        (
+            b.GetBeginAtomIdx(),
+            b.GetEndAtomIdx(),
+            str(b.GetBondType()),
+            b.GetIsAromatic(),
+        )
+        for b in mol.GetBonds()
+    )
+    coordinates = (
+        mol.GetConformer().GetPositions().tobytes() if mol.GetNumConformers() else None
+    )
+    return atoms, bonds, coordinates
 
 
 class MoleculeWatcher:
@@ -194,8 +215,10 @@ def sync_other_windows(context, source) -> None:
             win = context.get_window(key)
         except Exception:
             win = None
-        if win is None or win is source or not hasattr(
-            win, "sync_symbol_from_settings"
+        if (
+            win is None
+            or win is source
+            or not hasattr(win, "sync_symbol_from_settings")
         ):
             continue
         try:

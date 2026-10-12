@@ -49,12 +49,22 @@ def ring_normal(positions: np.ndarray, reference: np.ndarray = None) -> np.ndarr
     Best-fit plane normal via SVD of centred positions.
     Returns unit normal vector (shape (3,)), sign-resolved by `orient_normal`.
     """
+    positions = np.asarray(positions, dtype=float)
+    if (
+        positions.ndim != 2
+        or positions.shape[1] != 3
+        or len(positions) < 3
+        or not np.isfinite(positions).all()
+    ):
+        raise ValueError("A ring plane requires at least three finite 3D coordinates")
     centered = positions - positions.mean(axis=0)
-    _, _, vh = np.linalg.svd(centered)
+    _, singular, vh = np.linalg.svd(centered, full_matrices=False)
+    if singular[1] <= 1e-10 * max(float(singular[0]), 1.0):
+        raise ValueError("Coincident or collinear atoms do not define a ring plane")
     n = vh[-1]
     norm = np.linalg.norm(n)
     if norm <= 1e-10:
-        return np.array([0.0, 0.0, 1.0])
+        raise ValueError("The ring plane normal is undefined")
     return orient_normal(n / norm, reference)
 
 
@@ -93,6 +103,8 @@ def compute_nics_points(
         'normal'      – the sign-resolved unit normal used
         'planarity'   – RMS out-of-plane deviation of the ring atoms (Å)
     """
+    if not math.isfinite(height):
+        raise ValueError("NICS probe height must be finite")
     if len(positions) < 3:
         raise ValueError("Need at least 3 atoms to define a ring plane")
     centroid = ring_centroid(positions)
@@ -333,10 +345,12 @@ def counts_for_spacing(extents, spacing: float) -> tuple:
     grows each half-width to a whole number of steps, to make the step exactly
     *spacing* everywhere.
     """
-    if spacing <= 0:
+    if not math.isfinite(spacing) or spacing <= 0:
         raise ValueError("spacing must be positive")
     counts = []
     for e in np.atleast_1d(np.asarray(extents, dtype=float)):
+        if not math.isfinite(e):
+            raise ValueError("Grid extents must be finite")
         counts.append(1 if e <= 0 else int(math.ceil(2.0 * e / spacing)) + 1)
     return tuple(counts)
 
@@ -351,10 +365,12 @@ def snap_extents_to_spacing(extents, spacing: float) -> tuple:
     The tolerance keeps a half-width that is already an exact multiple from
     being pushed a whole step wider by floating-point noise.
     """
-    if spacing <= 0:
+    if not math.isfinite(spacing) or spacing <= 0:
         raise ValueError("spacing must be positive")
     snapped = []
     for e in np.atleast_1d(np.asarray(extents, dtype=float)):
+        if not math.isfinite(e):
+            raise ValueError("Grid extents must be finite")
         if e <= 0:
             snapped.append(0.0)
         else:
@@ -426,6 +442,10 @@ def _per_axis(value, count, name):
 
 def _axis_steps(n_points, extent, name):
     """Sample points along one axis, validating the pair."""
+    if not np.isfinite(n_points) or int(n_points) != n_points:
+        raise ValueError(f"{name}: point count must be a finite integer")
+    if not np.isfinite(extent):
+        raise ValueError(f"{name}: extent must be finite")
     if n_points < 1:
         raise ValueError(f"{name}: need at least 1 point")
     if extent < 0:
@@ -484,7 +504,10 @@ def compute_nics_grid(
     ax1, ax2, ax3 = grid_axes(plane, positions, reference)
     if center is None:
         center = np.zeros(3) if plane in _LAB_AXES else ring_centroid(positions)
-    origin = np.asarray(center, dtype=float) + offset * ax3
+    center = np.asarray(center, dtype=float)
+    if center.shape != (3,) or not np.isfinite(center).all() or not np.isfinite(offset):
+        raise ValueError("Grid center and offset must be finite 3D coordinates")
+    origin = center + offset * ax3
 
     steps1 = _axis_steps(n1, e1, "axis 1")
     steps2 = _axis_steps(n2, e2, "axis 2")
@@ -543,7 +566,10 @@ def compute_nics_volume(
     ax1, ax2, ax3 = grid_axes(plane, positions, reference)
     if center is None:
         center = np.zeros(3) if plane in _LAB_AXES else ring_centroid(positions)
-    origin = np.asarray(center, dtype=float) + offset * ax3
+    center = np.asarray(center, dtype=float)
+    if center.shape != (3,) or not np.isfinite(center).all() or not np.isfinite(offset):
+        raise ValueError("Grid center and offset must be finite 3D coordinates")
+    origin = center + offset * ax3
 
     steps1 = _axis_steps(n1, e1, "axis 1")
     steps2 = _axis_steps(n2, e2, "axis 2")

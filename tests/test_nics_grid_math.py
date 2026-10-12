@@ -117,9 +117,8 @@ class TestOrientNormal(unittest.TestCase):
         """Collinear points have no plane; the caller still needs a unit vector
         rather than a NaN that silently poisons every probe position."""
         pts = np.zeros((4, 3))
-        n = ring_normal(pts)
-        self.assertAlmostEqual(float(np.linalg.norm(n)), 1.0)
-        self.assertFalse(np.isnan(n).any())
+        with self.assertRaises(ValueError):
+            ring_normal(pts)
 
 
 @unittest.skipIf(Chem is None, "rdkit not installed")
@@ -312,7 +311,7 @@ class TestRingFrame(unittest.TestCase):
         self.assertAlmostEqual(float(np.linalg.norm(u)), 1.0, places=10)
         self.assertAlmostEqual(float(u @ n), 0.0, places=10)
 
-    def test_degenerate_svd_still_yields_a_unit_normal(self):
+    def test_degenerate_svd_rejects_a_zero_normal(self):
         """`np.linalg.svd` always returns unit rows, so the zero-length guard in
         `ring_normal` cannot be reached through real coordinates — it exists for
         a degenerate solver result. Force that result to prove the guard works
@@ -321,11 +320,11 @@ class TestRingFrame(unittest.TestCase):
 
         real_svd = np.linalg.svd
         try:
-            np.linalg.svd = lambda *a, **kw: (None, None, np.zeros((3, 3)))
-            n = math_mod.ring_normal(_hexagon())
+            np.linalg.svd = lambda *a, **kw: (None, np.array([1., 1., 0.]), np.zeros((3, 3)))
+            with self.assertRaises(ValueError):
+                math_mod.ring_normal(_hexagon())
         finally:
             np.linalg.svd = real_svd
-        np.testing.assert_allclose(n, np.array([0.0, 0.0, 1.0]))
 
 
 # ---------------------------------------------------------------------------
@@ -889,3 +888,29 @@ class TestSnapExtentsToSpacing(unittest.TestCase):
             with self.subTest(spacing=bad):
                 with self.assertRaises(ValueError):
                     snap_extents_to_spacing([1.0], bad)
+
+
+
+class TestAuditNumericValidation(unittest.TestCase):
+    def test_ring_svd_uses_bounded_matrices(self):
+        from unittest.mock import patch
+        original = np.linalg.svd
+        def svd(values, **kwargs):
+            self.assertIs(kwargs.get("full_matrices"), False)
+            return original(values, **kwargs)
+        with patch("numpy.linalg.svd", side_effect=svd):
+            n = ring_normal(_hexagon())
+        self.assertAlmostEqual(np.linalg.norm(n), 1)
+
+    def test_collinear_ring_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ring_normal(np.array([[0., 0., 0.], [1., 0., 0.], [2., 0., 0.]]))
+
+    def test_nonfinite_grid_parameters_are_rejected(self):
+        from nics_placer.nics_math import compute_nics_grid, counts_for_spacing
+        for params in ({"extent": float("inf")}, {"offset": float("nan")},
+                       {"center": [0, 0, float("inf")]}, {"n_points": 2.5}):
+            with self.assertRaises(ValueError):
+                compute_nics_grid(plane="xy", **params)
+        with self.assertRaises(ValueError):
+            counts_for_spacing([2, 2], float("inf"))

@@ -38,6 +38,11 @@ from PyQt6.QtWidgets import (
 )
 import pyvista as pv
 
+try:
+    import vtk
+except ImportError:
+    vtk = None
+
 from . import PLUGIN_NAME, PLUGIN_VERSION, _plugin_settings, _save_plugin_settings
 from .ghosts import (
     GHOST_SYMBOLS,
@@ -131,6 +136,7 @@ class NicsPlacerDialog(QDialog):
     def __init__(self, context, parent=None):
         super().__init__(parent)
         self._context = context
+        self._closed = False
         self.setWindowTitle(f"NICS Placer  —  {PLUGIN_NAME} v{PLUGIN_VERSION}")
         self.resize(620, 450)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
@@ -275,6 +281,7 @@ class NicsPlacerDialog(QDialog):
 
     def _load_rings(self):
         mol = self._context.current_molecule
+        self._watcher.reset(mol)
         self._nics_points = []
         self._error_rings = set()
         self._table.setRowCount(0)
@@ -400,6 +407,8 @@ class NicsPlacerDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _render_spheres(self):
+        if self.__dict__.get("_closed", False):
+            return
         plotter = self._context.plotter
         if plotter is None:
             return
@@ -492,9 +501,9 @@ class NicsPlacerDialog(QDialog):
         self._click_filter = None
 
     def _on_plotter_click(self, x, y, widget):
+        if vtk is None:
+            return
         try:
-            import vtk
-
             plotter = self._context.plotter
             if plotter is None:
                 return
@@ -620,6 +629,12 @@ class NicsPlacerDialog(QDialog):
 
     def _apply_staged(self):
         """Place Bq atoms for all red (staged) points."""
+        if self._watcher.changed(self._context.current_molecule):
+            self._load_rings()
+            self._context.show_status_message(
+                "Molecule changed; review and stage the rebuilt probes.", 4000
+            )
+            return
         staged = [pt for pt in self._nics_points if pt["state"] == _STATE_STAGED]
         if not staged:
             return
@@ -629,13 +644,14 @@ class NicsPlacerDialog(QDialog):
         # A probe whose spot already holds a ghost (a grid point on the ring
         # centre, say) is marked placed without adding a second copy.
         to_place, skipped = new_probe_positions(mol, [pt["pos"] for pt in staged])
-        for pt in staged:
-            pt["state"] = _STATE_PLACED
         if to_place:
             self._context.current_molecule = _add_bq_atoms(
                 mol, to_place, symbol=self._ghost_symbol
             )
             self._context.push_undo_checkpoint()
+            self._watcher.reset(self._context.current_molecule)
+        for pt in staged:
+            pt["state"] = _STATE_PLACED
         if skipped:
             self._context.show_status_message(
                 f"{skipped} probe(s) already had a ghost atom there; not duplicated.",
@@ -697,6 +713,7 @@ class NicsPlacerDialog(QDialog):
         self._retag_placed_atoms(self._ghost_symbol)
 
     def showEvent(self, event):
+        self._closed = False
         super().showEvent(event)
         # Sync symbol from persistent settings before loading rings
         self.sync_symbol_from_settings()
@@ -709,8 +726,16 @@ class NicsPlacerDialog(QDialog):
         if not self._poll_timer.isActive():
             self._poll_timer.start()
 
-    def closeEvent(self, event):
+    def _cleanup(self):
+        self._closed = True
         self._poll_timer.stop()
         self._disable_picking()
         self._clear_actors()
-        super().closeEvent(event)
+
+    def done(self, result):
+        self._cleanup()
+        super().done(result)
+
+    def closeEvent(self, event):
+        self._cleanup()
+        event.accept()

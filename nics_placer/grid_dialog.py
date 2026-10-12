@@ -66,6 +66,7 @@ from .nics_math import (
     compute_nics_volume,
     counts_for_spacing,
     get_ring_positions,
+    planarity_rms,
     get_rings,
     molecular_reference_normal,
     molecule_bounds,
@@ -109,6 +110,7 @@ class NicsGridDialog(QDialog):
     def __init__(self, context, parent=None):
         super().__init__(parent)
         self._context = context
+        self._closed = False
         self.setWindowTitle(f"NICS Grid (2D, 3D)  —  {PLUGIN_NAME} v{PLUGIN_VERSION}")
         self.resize(600, 820)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint)
@@ -685,7 +687,6 @@ class NicsGridDialog(QDialog):
             planarity = ""
             try:
                 pts = get_ring_positions(mol, ring["atoms"])
-                from .nics_math import planarity_rms
 
                 planarity = f"{planarity_rms(pts):.3f} A"
             except Exception as _e:
@@ -708,6 +709,8 @@ class NicsGridDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _render_spheres(self):
+        if self.__dict__.get("_closed", False):
+            return
         plotter = self._context.plotter
         if plotter is None:
             return
@@ -778,6 +781,12 @@ class NicsGridDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _place_grid(self):
+        if self._watcher.changed(self._context.current_molecule):
+            self._reload()
+            self._context.show_status_message(
+                "Molecule changed; review the rebuilt grid before placing it.", 4000
+            )
+            return
         if not self._grid_points:
             return
         mol = self._context.current_molecule
@@ -796,6 +805,12 @@ class NicsGridDialog(QDialog):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
+        if self._watcher.changed(self._context.current_molecule):
+            self._reload()
+            self._context.show_status_message(
+                "Molecule changed; review the rebuilt grid before placing it.", 4000
+            )
+            return
         # Skip points that already hold a ghost: pressing Place Grid twice, or
         # a grid point landing on a NICS(0) probe, would otherwise stack two
         # ghosts on one spot.
@@ -807,6 +822,7 @@ class NicsGridDialog(QDialog):
                 mol, positions, symbol=self._ghost_symbol
             )
             self._context.push_undo_checkpoint()
+            self._watcher.reset(self._context.current_molecule)
         msg = f"Placed {len(positions)} NICS grid probes."
         if skipped:
             msg += f" {skipped} already had a ghost atom there and were skipped."
@@ -836,6 +852,7 @@ class NicsGridDialog(QDialog):
         self._update_orca_hint()
 
     def showEvent(self, event):
+        self._closed = False
         super().showEvent(event)
         self.sync_symbol_from_settings()
         self._on_mode_changed(self._mode_combo.currentIndex())
@@ -844,7 +861,15 @@ class NicsGridDialog(QDialog):
         if not self._poll_timer.isActive():
             self._poll_timer.start()
 
-    def closeEvent(self, event):
+    def _cleanup(self):
+        self._closed = True
         self._poll_timer.stop()
         self._clear_actors()
-        super().closeEvent(event)
+
+    def done(self, result):
+        self._cleanup()
+        super().done(result)
+
+    def closeEvent(self, event):
+        self._cleanup()
+        event.accept()

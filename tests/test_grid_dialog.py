@@ -432,7 +432,7 @@ def test_planarity_failure_leaves_the_row_blank(monkeypatch, caplog):
     import nics_placer.nics_math as math_mod
 
     monkeypatch.setattr(
-        math_mod, "planarity_rms", MagicMock(side_effect=RuntimeError("nope"))
+        grid_mod, "planarity_rms", MagicMock(side_effect=RuntimeError("nope"))
     )
     with caplog.at_level(logging.WARNING):
         dlg = _dialog()

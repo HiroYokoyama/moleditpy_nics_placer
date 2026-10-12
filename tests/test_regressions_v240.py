@@ -322,3 +322,77 @@ class TestUniformSpacingCap:
         dlg._on_uniform_toggled(True)
         text = dlg._count_label.setText.call_args[0][0]
         assert "not uniform" not in text
+
+
+class TestAuditPlacementSafety:
+    def test_apply_checks_geometry_before_poll_timer(self):
+        ctx = _Ctx(_mol_3d())
+        dlg = _placer(ctx)
+        dlg._stage_selected_nics0()
+        conf = ctx.current_molecule.GetConformer()
+        for i in range(ctx.current_molecule.GetNumAtoms()):
+            pos = conf.GetAtomPosition(i)
+            conf.SetAtomPosition(i, Point3D(pos.x + 5, pos.y, pos.z))
+        dlg._apply_staged()
+        assert _n_ghosts(ctx.current_molecule) == 0
+        ctx.push_undo_checkpoint.assert_not_called()
+        assert ctx.show_status_message.called
+
+    def test_grid_confirmation_cannot_place_on_replaced_molecule(self, monkeypatch):
+        ctx = _Ctx(_mol_3d())
+        dlg = _grid(ctx)
+        dlg._confirm_spin.setValue(1)
+        replacement = _mol_3d("c1ccc2ccccc2c1")
+
+        def confirm(*args):
+            ctx.current_molecule = replacement
+            return grid_mod.QMessageBox.StandardButton.Yes
+
+        monkeypatch.setattr(grid_mod.QMessageBox, "question", confirm)
+        dlg._place_grid()
+        assert ctx.current_molecule is replacement
+        assert _n_ghosts(replacement) == 0
+        ctx.push_undo_checkpoint.assert_not_called()
+
+    def test_watcher_detects_element_and_bond_edits(self):
+        mol = Chem.RWMol(_mol_3d())
+        watcher = ghosts.MoleculeWatcher(mol)
+        mol.GetAtomWithIdx(0).SetAtomicNum(7)
+        assert watcher.changed(mol)
+        bond = mol.GetBondWithIdx(0)
+        bond.SetBondType(Chem.BondType.SINGLE)
+        assert watcher.changed(mol)
+
+    def test_placement_retains_conformers_and_metadata(self):
+        mol = _mol_3d()
+        first = mol.GetConformer()
+        first.Set3D(False)
+        first.SetProp("frame", "first")
+        second = Chem.Conformer(first)
+        second.SetId(17)
+        second.Set3D(True)
+        second.SetProp("frame", "second")
+        mol.AddConformer(second, assignId=False)
+        before = [conf.GetPositions().copy() for conf in mol.GetConformers()]
+        out = ghosts.add_ghost_atoms(mol, [[0, 0, 1]])
+        assert out.GetNumConformers() == 2
+        assert [conf.GetId() for conf in out.GetConformers()] == [0, 17]
+        assert [conf.Is3D() for conf in out.GetConformers()] == [False, True]
+        assert [conf.GetProp("frame") for conf in out.GetConformers()] == [
+            "first",
+            "second",
+        ]
+        for conf, positions in zip(out.GetConformers(), before):
+            np.testing.assert_allclose(conf.GetPositions()[:-1], positions)
+            np.testing.assert_allclose(conf.GetPositions()[-1], [0, 0, 1])
+        assert mol.GetNumAtoms() + 1 == out.GetNumAtoms()
+
+    @pytest.mark.parametrize(
+        "positions", [[[0, 0]], [[0, float("nan"), 1]], [[0, 0, float("inf")]]]
+    )
+    def test_invalid_positions_do_not_modify_molecule(self, positions):
+        mol = _mol_3d()
+        before = mol.GetNumAtoms()
+        with pytest.raises(ValueError):
+            ghosts.add_ghost_atoms(mol, positions)
+        assert mol.GetNumAtoms() == before
