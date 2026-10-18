@@ -28,7 +28,7 @@ PLUGIN_VERSION = "3.0.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. Compatible with ORCA Input Generator Pro via the custom_symbol property."
 PLUGIN_CATEGORY = "3D Edit"
-PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=5.0.0a1, <6.0.0"
+PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=5.0.0, <6.0.0"
 
 _SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 _GHOST_SYMBOLS = {"Bq", "H:"}
