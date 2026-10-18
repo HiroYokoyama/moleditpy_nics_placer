@@ -1,5 +1,7 @@
 # MoleditPy NICS Placer Plugin
 
+This branch targets **MoleditPy 5.0.0a1–5.x** and uses **PySide6**. Plugin licensing is unchanged.
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20726104.svg)](https://doi.org/10.5281/zenodo.20726104)
 [![CI](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml/badge.svg)](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml)
 ![Test Coverage](https://img.shields.io/badge/coverage->90%25-green)
@@ -126,7 +128,7 @@ Copy the `nics_placer/` folder into your MoleditPy plugins directory:
 moleditpy_nics_placer/
     nics_placer/
         __init__.py      ← plugin entry point (registers both menu actions)
-        dialog.py        ← NicsPlacerDialog (PyQt6 + PyVista)
+        dialog.py        ← NicsPlacerDialog (PySide6 + PyVista)
         grid_dialog.py   ← NicsGridDialog — 2D/3D probe lattices
         nics_math.py     ← pure numpy ring + grid geometry
         settings.json    ← auto-created on first symbol change (gitignored)
@@ -135,7 +137,7 @@ moleditpy_nics_placer/
 ## Requirements
 
 - MoleditPy ≥ v3 (V3 plugin API)
-- PyQt6
+- PySide6
 - RDKit
 - PyVista
 - numpy

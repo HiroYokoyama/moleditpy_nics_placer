@@ -22,8 +22,8 @@ The 'custom_symbol' atom property is shared with XYZ Editor, Gaussian Input Gene
 import logging
 
 import numpy as np
-from PyQt6.QtCore import Qt, QTimer, QObject, QEvent
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer, QObject, QEvent
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,

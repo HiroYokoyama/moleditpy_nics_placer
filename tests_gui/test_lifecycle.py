@@ -4,12 +4,12 @@ import os
 from unittest.mock import MagicMock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("PYTEST_QT_API", "pyqt6")
+os.environ.setdefault("PYTEST_QT_API", "pyside6")
 
 import pytest
-from PyQt6.QtCore import Qt
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
