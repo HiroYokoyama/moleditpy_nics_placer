@@ -27,8 +27,8 @@ so the point count is shown live and confirmed above a threshold.
 import logging
 
 import numpy as np
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,

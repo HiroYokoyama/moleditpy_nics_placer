@@ -18,17 +18,17 @@ import os
 # only when the Qt runtime is already present.  Falls back to None so that
 # headless test environments never try to load the QtCore DLL.
 try:
-    from PyQt6.QtCore import QTimer as _QTimer, QCoreApplication as _QCoreApplication
+    from PySide6.QtCore import QTimer as _QTimer, QCoreApplication as _QCoreApplication
 except Exception:  # ImportError or OS-level DLL crash
     _QTimer = None
     _QCoreApplication = None
 
 PLUGIN_NAME = "NICS Placer"
-PLUGIN_VERSION = "2.5.0"
+PLUGIN_VERSION = "3.0.0"
 PLUGIN_AUTHOR = "HiroYokoyama"
 PLUGIN_DESCRIPTION = "Detect rings and place Bq ghost atoms at NICS(0)/NICS(1) probe positions. Compatible with ORCA Input Generator Pro via the custom_symbol property."
 PLUGIN_CATEGORY = "3D Edit"
-PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=3.0.0, <5.0.0"
+PLUGIN_SUPPORTED_MOLEDITPY_VERSION = ">=5.0.0, <6.0.0"
 
 _SETTINGS_FILE = os.path.join(os.path.dirname(__file__), "settings.json")
 _GHOST_SYMBOLS = {"Bq", "H:"}

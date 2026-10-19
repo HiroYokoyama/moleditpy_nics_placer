@@ -1,7 +1,7 @@
 """
 Tests for nics_placer/__init__.py — show_dialog, settings load/save error
 branches, and the deferred vs. immediate _apply_labels path in on_load.
-Relies on the rich PyQt6/pyvista stubs installed by tests/conftest.py so
+Relies on the rich PySide6/pyvista stubs installed by tests/conftest.py so
 that `from .dialog import NicsPlacerDialog` succeeds headlessly.
 """
 

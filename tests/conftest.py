@@ -1,5 +1,5 @@
 """
-Shared headless stubs for PyQt6 / pyvista.
+Shared headless stubs for PySide6 / pyvista.
 
 Installed at collection time (before any test module imports
 ``nics_placer.dialog``) so that whichever test file is collected first
@@ -219,9 +219,9 @@ class _FakeComboBox(_QBase):
 
 
 def install_qt_stubs():
-    """Install rich PyQt6 / pyvista stubs into sys.modules (idempotent)."""
-    if "PyQt6" in sys.modules and getattr(
-        sys.modules["PyQt6"], "_nics_placer_rich_stub", False
+    """Install rich PySide6 / pyvista stubs into sys.modules (idempotent)."""
+    if "PySide6" in sys.modules and getattr(
+        sys.modules["PySide6"], "_nics_placer_rich_stub", False
     ):
         return
 
@@ -276,14 +276,14 @@ def install_qt_stubs():
         def instance():
             return _QCoreApplication._instance
 
-    qt_core = types.ModuleType("PyQt6.QtCore")
+    qt_core = types.ModuleType("PySide6.QtCore")
     qt_core.Qt = _Qt
     qt_core.QTimer = _QTimer
     qt_core.QObject = _QBase
     qt_core.QEvent = _QEvent
     qt_core.QCoreApplication = _QCoreApplication
 
-    qt_widgets = types.ModuleType("PyQt6.QtWidgets")
+    qt_widgets = types.ModuleType("PySide6.QtWidgets")
     qt_widgets.QDialog = _QBase
     qt_widgets.QAbstractItemView = MagicMock()
     qt_widgets.QComboBox = _FakeComboBox
@@ -320,15 +320,15 @@ def install_qt_stubs():
 
     qt_widgets.QMessageBox = _QMessageBox
 
-    pyqt6 = types.ModuleType("PyQt6")
-    pyqt6.QtCore = qt_core
-    pyqt6.QtWidgets = qt_widgets
-    pyqt6._nics_placer_rich_stub = True
+    pyside6 = types.ModuleType("PySide6")
+    pyside6.QtCore = qt_core
+    pyside6.QtWidgets = qt_widgets
+    pyside6._nics_placer_rich_stub = True
 
     for name, mod in [
-        ("PyQt6", pyqt6),
-        ("PyQt6.QtCore", qt_core),
-        ("PyQt6.QtWidgets", qt_widgets),
+        ("PySide6", pyside6),
+        ("PySide6.QtCore", qt_core),
+        ("PySide6.QtWidgets", qt_widgets),
     ]:
         sys.modules[name] = mod
 

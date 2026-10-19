@@ -1,5 +1,5 @@
 """
-Tests for NicsGridDialog — driven headlessly against the rich PyQt6 / pyvista
+Tests for NicsGridDialog — driven headlessly against the rich PySide6 / pyvista
 stubs installed by tests/conftest.py.
 """
 

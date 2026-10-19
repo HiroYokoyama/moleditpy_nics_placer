@@ -1,6 +1,6 @@
 """
 Tests for nics_placer/dialog.py — Bq atom helpers and click-filter logic.
-PyQt6 and pyvista are stubbed so tests run headlessly.
+PySide6 and pyvista are stubbed so tests run headlessly.
 """
 
 import sys
@@ -33,13 +33,13 @@ def _install_stubs():
     _QEvent.Type.MouseButtonPress = 2
     _QEvent.Type.MouseButtonRelease = 3
 
-    qt_core = types.ModuleType("PyQt6.QtCore")
+    qt_core = types.ModuleType("PySide6.QtCore")
     qt_core.Qt = _Qt
     qt_core.QTimer = MagicMock()
     qt_core.QObject = _QBase
     qt_core.QEvent = _QEvent
 
-    qt_widgets = types.ModuleType("PyQt6.QtWidgets")
+    qt_widgets = types.ModuleType("PySide6.QtWidgets")
     qt_widgets.QDialog = _QBase
     qt_widgets.QAbstractItemView = MagicMock()
     qt_widgets.QComboBox = MagicMock()
@@ -51,13 +51,13 @@ def _install_stubs():
     qt_widgets.QTableWidgetItem = MagicMock()
     qt_widgets.QVBoxLayout = MagicMock()
 
-    pyqt6 = types.ModuleType("PyQt6")
-    pyqt6.QtCore = qt_core
-    pyqt6.QtWidgets = qt_widgets
+    pyside6 = types.ModuleType("PySide6")
+    pyside6.QtCore = qt_core
+    pyside6.QtWidgets = qt_widgets
     for name, mod in [
-        ("PyQt6", pyqt6),
-        ("PyQt6.QtCore", qt_core),
-        ("PyQt6.QtWidgets", qt_widgets),
+        ("PySide6", pyside6),
+        ("PySide6.QtCore", qt_core),
+        ("PySide6.QtWidgets", qt_widgets),
     ]:
         sys.modules.setdefault(name, mod)
     sys.modules.setdefault("pyvista", MagicMock())

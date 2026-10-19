@@ -1,6 +1,6 @@
 """
 Tests for NicsPlacerDialog itself — instantiated headlessly against the
-rich PyQt6 / pyvista stubs installed by tests/conftest.py.
+rich PySide6 / pyvista stubs installed by tests/conftest.py.
 """
 
 import sys
