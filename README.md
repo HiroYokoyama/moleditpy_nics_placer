@@ -1,7 +1,5 @@
 # MoleditPy NICS Placer Plugin
 
-This branch targets **MoleditPy 5.0.0a1–5.x** and uses **PySide6**. Plugin licensing is unchanged.
-
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20726104.svg)](https://doi.org/10.5281/zenodo.20726104)
 [![CI](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml/badge.svg)](https://github.com/HiroYokoyama/moleditpy_nics_placer/actions/workflows/ci.yml)
 ![Test Coverage](https://img.shields.io/badge/coverage->90%25-green)
