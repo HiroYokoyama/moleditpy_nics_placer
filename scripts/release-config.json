@@ -1,0 +1,19 @@
+{
+  "source": "nics_placer/__init__.py",
+  "title": "NICS Placer",
+  "package": "nics_placer",
+  "archive": "nics_placer_{version}.zip",
+  "assets": [
+    "nics_placer_{version}.zip"
+  ],
+  "include": [
+    "README.md",
+    "LICENSE",
+    "COPYING",
+    "LICENSING.md"
+  ],
+  "exclude": [
+    "*/__pycache__/*",
+    "*/.git/*"
+  ]
+}
